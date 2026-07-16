@@ -1,0 +1,5 @@
+# Godot 4 editor cache (regenerated on open)
+.godot/
+
+# Export output (regenerated via `godot --export-release "Web" build/web/index.html`)
+build/
