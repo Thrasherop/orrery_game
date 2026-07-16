@@ -38,8 +38,9 @@ func _update_size_cap() -> void:
 	var need := _box.get_combined_minimum_size()
 	var vp_h := get_viewport_rect().size.y
 	# touch: the rail is vertically centered — keep it clear of the brand
-	# panel (top) and the two-row dock (bottom)
-	var max_h := vp_h - 300.0 if UITheme.touch else vp_h * 0.68
+	# panel (top, now taller with the Saves/Reset row) and the two-row dock
+	# (bottom); the list scrolls inside whatever strip remains
+	var max_h := maxf(vp_h - 420.0, 100.0) if UITheme.touch else vp_h * 0.68
 	_scroll.custom_minimum_size = Vector2(need.x + 6, minf(need.y, max_h))
 
 

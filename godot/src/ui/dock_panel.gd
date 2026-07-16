@@ -22,6 +22,7 @@ var g_label: Label
 
 var _last_speed := -1.0
 var _last_playing := true
+var _last_g := 1.0
 
 
 func setup(sim_: Simulation) -> void:
@@ -190,3 +191,8 @@ func update_live() -> void:
 		_refresh_speed_ui()
 	if sim.playing != _last_playing:
 		_refresh_play_icon()
+	if sim.g_scale != _last_g:
+		# g changed outside the slider (loading a save / reset)
+		g_slider.set_value_no_signal(500.0 + 500.0 * log(sim.g_scale) / log(10.0))
+		g_label.text = "G ×%.2f" % sim.g_scale
+		_last_g = sim.g_scale

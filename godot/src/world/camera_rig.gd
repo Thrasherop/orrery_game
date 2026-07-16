@@ -216,6 +216,26 @@ func _pick(screen_pos: Vector2, slop: float) -> void:
 		Events.select_requested.emit(chosen)
 
 
+## current view for snapshots — goal values, so a capture taken mid-damp
+## restores where the user was heading, not a transient in-between frame
+func view_state() -> Dictionary:
+	return { target = target, yaw = yaw_goal, pitch = pitch_goal, dist = dist_goal }
+
+
+## jump the camera to a saved view (no animation, cancels any fly-to)
+func apply_view(tgt: Vector3, yaw_: float, pitch_: float, dist_: float) -> void:
+	_anim_active = false
+	target = tgt
+	_prev_target_pos = tgt
+	yaw = yaw_
+	yaw_goal = yaw_
+	pitch = pitch_
+	pitch_goal = pitch_
+	dist = clampf(dist_, MIN_DIST, MAX_DIST)
+	dist_goal = dist
+	_apply_transform()
+
+
 ## animate camera to frame the body (called by main on new selection)
 func fly_to(body: SimBody) -> void:
 	var d := maxf(body.size * 5.5, 7.0)

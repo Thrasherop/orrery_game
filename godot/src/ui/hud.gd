@@ -4,12 +4,14 @@ extends CanvasLayer
 ## handles the global keyboard shortcuts.
 
 var sim: Simulation
+var rig: CameraRig
 
 var brand: BrandPanel
 var rail: RailPanel
 var info: InfoCard
 var dock: DockPanel
 var add_panel: AddPanel
+var save_browser: SaveBrowser
 var toast: ToastLabel
 var hint: Label
 
@@ -20,8 +22,9 @@ var info_drawer: EdgeDrawer
 var dock_drawer: EdgeDrawer
 
 
-func setup(sim_: Simulation) -> void:
+func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 	sim = sim_
+	rig = rig_
 	layer = 3
 
 	brand = BrandPanel.new()
@@ -79,6 +82,14 @@ func setup(sim_: Simulation) -> void:
 	dock_drawer.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	dock_drawer.offset_bottom = -10 if UITheme.touch else -22
 	add_child(dock_drawer)
+
+	save_browser = SaveBrowser.new()
+	save_browser.setup(sim, rig)
+	add_child(save_browser)
+	brand.saves_clicked.connect(func() -> void:
+		add_panel.close_panel()
+		save_browser.open_browser())
+	brand.reset_clicked.connect(save_browser.do_reset)
 
 	toast = ToastLabel.new()
 	toast.anchor_left = 0.5
@@ -138,6 +149,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
 		return
+	if key.keycode == KEY_S and key.ctrl_pressed:
+		get_viewport().set_input_as_handled()
+		if key.shift_pressed:
+			save_browser.open_browser(true)   # save as…
+		else:
+			save_browser.quick_save()
+		return
 	match key.keycode:
 		KEY_SPACE:
 			dock.set_playing(not sim.playing)
@@ -148,7 +166,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_V:
 			Events.set_show_vectors(not Events.show_vectors)
 		KEY_ESCAPE:
-			if add_panel.is_open():
+			if save_browser.is_open():
+				save_browser.close_browser()
+			elif add_panel.is_open():
 				add_panel.close_panel()
 			else:
 				Events.deselect_requested.emit()

@@ -65,6 +65,17 @@ func _ready() -> void:
 	await _shot("res://tests/shot_6_impact.png")
 	print("[visual] merged = ", merged[0])
 
+	# save browser overlay (demo content is removed again after the shot)
+	var browser: SaveBrowser = main.hud.save_browser
+	var demo: String = browser.store.create_save("", "Demo experiment", Snapshot.capture(sim, main.camera_rig))
+	var folder: String = browser.store.create_folder("", "Demos")
+	browser.open_browser()
+	await get_tree().create_timer(0.4).timeout
+	await _shot("res://tests/shot_7_saves.png")
+	browser.close_browser()
+	browser.store.delete_save(demo)
+	browser.store.delete_folder(folder)
+
 	get_tree().quit(0)
 
 

@@ -1,6 +1,10 @@
 class_name BrandPanel
 extends PanelContainer
-## Top-left brand/clock panel: eyebrow, simulated date + UTC clock, mode badge.
+## Top-left brand/clock panel: eyebrow, simulated date + UTC clock, mode badge,
+## and the save-system entry points (Saves… / Reset).
+
+signal saves_clicked
+signal reset_clicked
 
 var date_label: Label
 var clock_label: Label
@@ -35,6 +39,33 @@ func _init() -> void:
 	badge = UITheme.make_key_label("Kepler ephemeris")
 	badge.add_theme_font_size_override("font_size", 9)
 	box.add_child(badge)
+
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 4)
+	box.add_child(gap)
+
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 6)
+	box.add_child(actions)
+	actions.add_child(_action_chip("Saves…",
+		"Save / load experiments (Ctrl+S quick-saves)",
+		func() -> void: saves_clicked.emit()))
+	actions.add_child(_action_chip("Reset",
+		"Restore the pristine solar system",
+		func() -> void: reset_clicked.emit()))
+
+
+func _action_chip(text: String, tip: String, action: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.tooltip_text = tip
+	UITheme.style_chip(b, 11)
+	b.add_theme_stylebox_override("normal", UITheme.flat_style(Color(1, 1, 1, 0.06)))
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if UITheme.touch:
+		b.custom_minimum_size = Vector2(0, 44)
+	b.pressed.connect(action)
+	return b
 
 
 func update_clock(ms: float) -> void:

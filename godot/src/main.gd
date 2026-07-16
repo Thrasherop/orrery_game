@@ -48,7 +48,7 @@ func _ready() -> void:
 
 	hud = Hud.new()
 	add_child(hud)
-	hud.setup(sim)
+	hud.setup(sim, camera_rig)
 
 	Events.select_requested.connect(_on_select_requested)
 	Events.deselect_requested.connect(_deselect)

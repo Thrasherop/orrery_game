@@ -39,12 +39,18 @@ func _init() -> void:
 	# the sun wobbles around the barycenter in N-body mode — trail it too
 	sun.init_trail(1600, 0.3)
 	for def in Catalog.make_planets():
-		var b := SimBody.from_def(def)
-		# realtime orbit trail — the path this body actually travels
-		# (backfilled from the ephemeris on first tick, extended live each frame)
-		b.init_trail(1024, 0.24)
-		b.trail_interval = b.period_days / 512.0   # 512 samples per orbit, buffer holds ~2 orbits
-		planets.append(b)
+		planets.append(make_planet_from_def(def))
+
+
+## build a planet SimBody with its trail configured (also used when a saved
+## snapshot restores a merged-away planet)
+func make_planet_from_def(def: BodyDef) -> SimBody:
+	var b := SimBody.from_def(def)
+	# realtime orbit trail — the path this body actually travels
+	# (backfilled from the ephemeris on first tick, extended live each frame)
+	b.init_trail(1024, 0.24)
+	b.trail_interval = b.period_days / 512.0   # 512 samples per orbit, buffer holds ~2 orbits
+	return b
 
 
 func all_bodies() -> Array:

@@ -83,6 +83,24 @@ static func style_primary(btn: Button) -> void:
 	btn.add_theme_color_override("font_hover_color", ACCENT)
 
 
+## red-tinted button for destructive actions (matches the info card's
+## "Remove body" palette)
+static func style_danger(btn: Button) -> void:
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", fs(12))
+	var red := Color(1, 96 / 255.0, 96 / 255.0)
+	var sb := flat_style(Color(red.r, red.g, red.b, 0.12), 10)
+	sb.border_color = Color(red.r, red.g, red.b, 0.3)
+	sb.set_border_width_all(1)
+	btn.add_theme_stylebox_override("normal", sb)
+	var hv := flat_style(Color(red.r, red.g, red.b, 0.22), 10)
+	btn.add_theme_stylebox_override("hover", hv)
+	btn.add_theme_stylebox_override("pressed", hv)
+	btn.add_theme_color_override("font_color", Color("ff9d9d"))
+	btn.add_theme_color_override("font_hover_color", Color("ffbdbd"))
+	btn.add_theme_color_override("font_pressed_color", Color("ffbdbd"))
+
+
 static func style_ghost(btn: Button) -> void:
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.add_theme_font_size_override("font_size", fs(12))
