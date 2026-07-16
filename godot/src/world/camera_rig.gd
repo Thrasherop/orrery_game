@@ -4,12 +4,19 @@ extends Node3D
 ## scroll zoom, right/middle-drag pan, plus the prototype's selection
 ## behaviour — a 0.9 s eased fly-to when a body is selected, then delta-follow
 ## so the camera tracks the body while the user keeps full orbit control.
-## Also does click picking via manual ray-vs-sphere tests.
+## Touch: one finger orbits, two fingers pinch-zoom and pan, a tap selects.
+## Input arrives through the full-screen GestureSurface control (main.gd), so
+## the GUI keeps arbitrating pointer events between HUD panels and the camera.
+## Tap/click picking is a screen-space disc test with a slop margin.
 
 const MIN_DIST := 4.0
 const MAX_DIST := 1200.0
 const FLY_TIME := 0.9
 const DAMP := 10.0            # exp smoothing rate (≈ OrbitControls damping 0.06)
+const TAP_SLOP_MOUSE := 5.0   # max pointer travel (logical px) that still picks
+const TAP_SLOP_TOUCH := 16.0
+const PICK_SLOP_MOUSE := 8.0  # extra pick radius around a body's disc
+const PICK_SLOP_TOUCH := 26.0
 
 var cam: Camera3D
 
@@ -35,6 +42,8 @@ var _rotating := false
 var _panning := false
 var _down_pos := Vector2.ZERO
 var _moved := 0.0
+var _touches := {}            # touch index -> last position (logical px)
+var _multi_gesture := false   # 2+ fingers seen since last touch-down → no tap
 
 var pick_provider: Callable   # -> Array of {body, pos, radius}
 
@@ -70,58 +79,141 @@ func _apply_transform() -> void:
 	cam.look_at_from_position(cam.position, target, Vector3.UP)
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT:
-			if mb.pressed:
-				_rotating = true
-				_down_pos = mb.position
-				_moved = 0.0
-			else:
-				_rotating = false
-				if _moved <= 5.0:
-					_pick(mb.position)
-		elif mb.button_index == MOUSE_BUTTON_RIGHT or mb.button_index == MOUSE_BUTTON_MIDDLE:
-			_panning = mb.pressed
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			dist_goal = clampf(dist_goal * 0.9, MIN_DIST, MAX_DIST)
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			dist_goal = clampf(dist_goal * 1.111, MIN_DIST, MAX_DIST)
+## Entry point for all pointer input, forwarded from the GestureSurface
+## control's gui_input. Touch is handled natively; the mouse events Godot
+## synthesizes from touches are ignored so gestures aren't applied twice.
+func handle_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
+		return
+	if event is InputEventScreenTouch:
+		_on_touch(event as InputEventScreenTouch)
+	elif event is InputEventScreenDrag:
+		_on_touch_drag(event as InputEventScreenDrag)
+	elif event is InputEventMouseButton:
+		_on_mouse_button(event as InputEventMouseButton)
 	elif event is InputEventMouseMotion:
-		var mm := event as InputEventMouseMotion
-		var vp_h := float(get_viewport().get_visible_rect().size.y)
-		if _rotating:
-			_moved += mm.relative.length()
-			yaw_goal -= TAU * mm.relative.x / vp_h
-			pitch_goal = clampf(pitch_goal + TAU * mm.relative.y / vp_h, -1.55, 1.55)
-		elif _panning:
-			var pan_scale := dist / vp_h
-			var basis_ := cam.global_transform.basis
-			target += (-basis_.x * mm.relative.x + basis_.y * mm.relative.y) * pan_scale
+		_on_mouse_motion(event as InputEventMouseMotion)
+	elif event is InputEventMagnifyGesture:
+		# macOS/web trackpad pinch
+		var mg := event as InputEventMagnifyGesture
+		dist_goal = clampf(dist_goal / maxf(mg.factor, 0.05), MIN_DIST, MAX_DIST)
+	elif event is InputEventPanGesture:
+		# trackpad two-finger scroll → zoom, like the wheel
+		var pg := event as InputEventPanGesture
+		var f := clampf(1.0 + pg.delta.y * 0.02, 0.5, 2.0)
+		dist_goal = clampf(dist_goal * f, MIN_DIST, MAX_DIST)
 
 
-func _pick(screen_pos: Vector2) -> void:
+func _on_mouse_button(mb: InputEventMouseButton) -> void:
+	if mb.button_index == MOUSE_BUTTON_LEFT:
+		if mb.pressed:
+			_rotating = true
+			_down_pos = mb.position
+			_moved = 0.0
+		else:
+			_rotating = false
+			if _moved <= TAP_SLOP_MOUSE:
+				_pick(mb.position, PICK_SLOP_MOUSE)
+	elif mb.button_index == MOUSE_BUTTON_RIGHT or mb.button_index == MOUSE_BUTTON_MIDDLE:
+		_panning = mb.pressed
+	elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
+		dist_goal = clampf(dist_goal * 0.9, MIN_DIST, MAX_DIST)
+	elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
+		dist_goal = clampf(dist_goal * 1.111, MIN_DIST, MAX_DIST)
+
+
+func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
+	if _rotating:
+		_moved += mm.relative.length()
+		_orbit(mm.relative)
+	elif _panning:
+		_pan(mm.relative)
+
+
+func _on_touch(st: InputEventScreenTouch) -> void:
+	if st.pressed:
+		_touches[st.index] = st.position
+		if _touches.size() == 1:
+			_multi_gesture = false
+			_down_pos = st.position
+			_moved = 0.0
+		else:
+			_multi_gesture = true
+	else:
+		_touches.erase(st.index)
+		if _touches.is_empty() and not _multi_gesture and _moved <= TAP_SLOP_TOUCH:
+			_pick(st.position, PICK_SLOP_TOUCH)
+
+
+func _on_touch_drag(sd: InputEventScreenDrag) -> void:
+	if not _touches.has(sd.index):
+		return
+	var prev: Vector2 = _touches[sd.index]
+	if _touches.size() >= 2:
+		# incremental pinch: this finger moved, the others are where they were.
+		# Separation change zooms, centroid change pans.
+		var other := _other_touch_center(sd.index)
+		var sep_old := maxf(prev.distance_to(other), 1.0)
+		var sep_new := maxf(sd.position.distance_to(other), 1.0)
+		dist_goal = clampf(dist_goal * sep_old / sep_new, MIN_DIST, MAX_DIST)
+		_pan((sd.position - prev) / float(_touches.size()))
+	else:
+		_moved += sd.relative.length()
+		_orbit(sd.relative)
+	_touches[sd.index] = sd.position
+
+
+func _other_touch_center(except_index: int) -> Vector2:
+	var sum := Vector2.ZERO
+	var n := 0
+	for i in _touches:
+		if i != except_index:
+			sum += _touches[i]
+			n += 1
+	return sum / float(maxi(n, 1))
+
+
+func _orbit(rel: Vector2) -> void:
+	var vp_h := float(get_viewport().get_visible_rect().size.y)
+	yaw_goal -= TAU * rel.x / vp_h
+	pitch_goal = clampf(pitch_goal + TAU * rel.y / vp_h, -1.55, 1.55)
+
+
+func _pan(rel: Vector2) -> void:
+	var vp_h := float(get_viewport().get_visible_rect().size.y)
+	var pan_scale := dist / vp_h
+	var basis_ := cam.global_transform.basis
+	target += (-basis_.x * rel.x + basis_.y * rel.y) * pan_scale
+
+
+## Screen-space picking: a body is hit inside its projected disc plus `slop`
+## logical pixels — small/distant planets stay tappable with a finger.
+## Direct disc hits win by depth; near-misses fall back to the closest body.
+func _pick(screen_pos: Vector2, slop: float) -> void:
 	if not pick_provider.is_valid():
 		return
-	var origin := cam.project_ray_origin(screen_pos)
-	var dir := cam.project_ray_normal(screen_pos)
-	var best_t := INF
-	var best_body = null
+	var vp_h := float(get_viewport().get_visible_rect().size.y)
+	var px_per_rad := vp_h * 0.5 / tan(deg_to_rad(cam.fov) * 0.5)
+	var best_depth := INF
+	var best_hit = null
+	var best_gap := slop
+	var best_near = null
 	for c in pick_provider.call():
-		var oc: Vector3 = origin - c.pos
-		var b := oc.dot(dir)
-		var disc: float = b * b - (oc.length_squared() - c.radius * c.radius)
-		if disc < 0.0:
+		if cam.is_position_behind(c.pos):
 			continue
-		var t := -b - sqrt(disc)
-		if t < 0.0:
-			t = -b + sqrt(disc)
-		if t >= 0.0 and t < best_t:
-			best_t = t
-			best_body = c.body
-	if best_body != null:
-		Events.select_requested.emit(best_body)
+		var d := cam.global_position.distance_to(c.pos)
+		var screen_r: float = c.radius / maxf(d, 0.001) * px_per_rad
+		var gap := cam.unproject_position(c.pos).distance_to(screen_pos) - screen_r
+		if gap <= 0.0:
+			if d < best_depth:
+				best_depth = d
+				best_hit = c.body
+		elif gap < best_gap:
+			best_gap = gap
+			best_near = c.body
+	var chosen = best_hit if best_hit != null else best_near
+	if chosen != null:
+		Events.select_requested.emit(chosen)
 
 
 ## animate camera to frame the body (called by main on new selection)

@@ -13,11 +13,13 @@ config/features=PackedStringArray("4.4", "Forward Plus")
 [autoload]
 
 Events="*res://src/autoload/events.gd"
+UX="*res://src/autoload/ux.gd"
 
 [display]
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+window/handheld/orientation=4
 
 [rendering]
 

@@ -20,6 +20,9 @@ var dir_val: Label
 var hint_label: Label
 
 
+var _scroll: ScrollContainer
+
+
 func setup(sim_: Simulation) -> void:
 	sim = sim_
 	add_theme_stylebox_override("panel", UITheme.panel_style())
@@ -28,7 +31,17 @@ func setup(sim_: Simulation) -> void:
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 7)
-	add_child(box)
+	if UITheme.touch:
+		# touch: the form scrolls inside a height cap so it never slides
+		# under the dock (see _update_size_cap); desktop fits as-is
+		_scroll = ScrollContainer.new()
+		_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_scroll.follow_focus = true
+		add_child(_scroll)
+		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_scroll.add_child(box)
+	else:
+		add_child(box)
 
 	box.add_child(UITheme.make_label("New celestial body", 15, UITheme.TEXT))
 
@@ -45,7 +58,7 @@ func setup(sim_: Simulation) -> void:
 	dist_slider.step = 1
 	dist_slider.value = 500
 	UITheme.style_slider(dist_slider)
-	dist_slider.custom_minimum_size = Vector2(250, 16)
+	dist_slider.custom_minimum_size = Vector2(250, 30) if UITheme.touch else Vector2(250, 16)
 	dist_slider.value_changed.connect(func(v: float) -> void:
 		dist_edit.text = "%.2f" % Fmt.slider_to_dist(v)
 		_on_input_changed())
@@ -112,11 +125,27 @@ func setup(sim_: Simulation) -> void:
 		s.value_changed.connect(func(_v: float) -> void: _on_input_changed())
 
 
+func _ready() -> void:
+	if _scroll == null:
+		return
+	get_viewport().size_changed.connect(_update_size_cap)
+	_update_size_cap()
+
+
+## touch only: cap the form to the space above the dock (the panel is
+## top-anchored there); width comes from the form's own minimum
+func _update_size_cap() -> void:
+	if not is_inside_tree():
+		return
+	var need := (_scroll.get_child(0) as Control).get_combined_minimum_size()
+	_scroll.custom_minimum_size = Vector2(need.x + 6, get_viewport_rect().size.y - 200.0)
+
+
 func _line_edit(initial: String) -> LineEdit:
 	var e := LineEdit.new()
 	e.text = initial
-	e.custom_minimum_size = Vector2(120, 0)
-	e.add_theme_font_size_override("font_size", 12)
+	e.custom_minimum_size = Vector2(130, 38) if UITheme.touch else Vector2(120, 0)
+	e.add_theme_font_size_override("font_size", UITheme.fs(12))
 	return e
 
 

@@ -5,6 +5,9 @@ extends Node
 
 
 func _ready() -> void:
+	# explicit size: the OS may clamp the startup window, which would skew shots
+	get_window().size = Vector2i(1600, 900)
+	await get_tree().process_frame
 	var main: Node = load("res://main.tscn").instantiate()
 	add_child(main)
 	await get_tree().create_timer(3.0).timeout

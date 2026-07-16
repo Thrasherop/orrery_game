@@ -33,6 +33,15 @@ func _ready() -> void:
 	add_child(camera_rig)
 	camera_rig.pick_provider = world.pick_candidates
 
+	# full-screen input surface (default canvas, under every HUD CanvasLayer):
+	# the GUI routes pointer/touch events here only when no panel claims them,
+	# so camera gestures and UI interaction never fight over a touch
+	var gestures := Control.new()
+	gestures.name = "GestureSurface"
+	gestures.set_anchors_preset(Control.PRESET_FULL_RECT)
+	gestures.gui_input.connect(camera_rig.handle_gui_input)
+	add_child(gestures)
+
 	labels = LabelsLayer.new()
 	add_child(labels)
 	labels.setup(sim, camera_rig)

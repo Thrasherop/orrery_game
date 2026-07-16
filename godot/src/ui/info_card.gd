@@ -24,7 +24,7 @@ func setup(sim_: Simulation) -> void:
 	sim = sim_
 	add_theme_stylebox_override("panel", UITheme.panel_style())
 	custom_minimum_size = Vector2(292, 0)
-	visible = false
+	# visibility is owned by the EdgeDrawer wrapping this card (see hud.gd)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
@@ -43,6 +43,8 @@ func setup(sim_: Simulation) -> void:
 	close.text = "✕"
 	close.tooltip_text = "Deselect"
 	UITheme.style_chip(close, 13)
+	if UITheme.touch:
+		close.custom_minimum_size = Vector2(44, 44)
 	close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	close.pressed.connect(func() -> void: Events.deselect_requested.emit())
 	head.add_child(close)
@@ -91,7 +93,7 @@ func setup(sim_: Simulation) -> void:
 	remove_btn = Button.new()
 	remove_btn.text = "Remove body"
 	remove_btn.focus_mode = Control.FOCUS_NONE
-	remove_btn.add_theme_font_size_override("font_size", 11)
+	remove_btn.add_theme_font_size_override("font_size", UITheme.fs(11))
 	var rsb := UITheme.flat_style(Color(1, 96 / 255.0, 96 / 255.0, 0.1), 9)
 	rsb.border_color = Color(1, 120 / 255.0, 120 / 255.0, 0.28)
 	rsb.set_border_width_all(1)
@@ -121,7 +123,7 @@ func _stat_cell_with_key(grid: GridContainer, key: String) -> Array:
 	cell.add_theme_constant_override("separation", 2)
 	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var k := UITheme.make_key_label(key)
-	k.add_theme_font_size_override("font_size", 9)
+	k.add_theme_font_size_override("font_size", UITheme.fs(9))
 	cell.add_child(k)
 	var v := UITheme.make_label("—", 13, UITheme.TEXT)
 	cell.add_child(v)
@@ -130,7 +132,6 @@ func _stat_cell_with_key(grid: GridContainer, key: String) -> Array:
 
 
 func _on_selection_changed(body) -> void:
-	visible = body != null
 	if body == null:
 		return
 	var b: SimBody = body

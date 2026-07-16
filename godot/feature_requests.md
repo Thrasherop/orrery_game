@@ -3,6 +3,11 @@ Better android UI/UX:
     - can't zoom in and out with two fingers
     - 
 
+Save system:
+    - Reset
+    - Save/load experiments as they are
+    - Checkpoint (like, same save but can go back to previous versions of that save)
+
 Toggle to switch between a hilio centric orbit, or to show the movement through space (like, as the whole system moves)
 
 moving latitude/longitude should move the orbital line. Right now, it stays level on the solar system plane

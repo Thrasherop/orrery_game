@@ -30,12 +30,14 @@ func rebuild() -> void:
 		btn.text = b.body_name.to_upper()
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.flat = true
-		btn.add_theme_font_size_override("font_size", 10)
+		btn.add_theme_font_size_override("font_size", UITheme.fs(10))
 		btn.add_theme_color_override("font_color", b.color)
 		btn.add_theme_color_override("font_hover_color", UITheme.ACCENT)
-		btn.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
-		btn.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
-		btn.add_theme_stylebox_override("pressed", StyleBoxEmpty.new())
+		for st in ["normal", "hover", "pressed"]:
+			var sbe := StyleBoxEmpty.new()
+			if UITheme.touch:
+				sbe.set_content_margin_all(8)   # fatter finger target
+			btn.add_theme_stylebox_override(st, sbe)
 		btn.modulate.a = 0.85
 		var body: SimBody = b
 		btn.pressed.connect(func() -> void: Events.select_requested.emit(body))

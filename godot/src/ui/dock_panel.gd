@@ -28,15 +28,27 @@ func setup(sim_: Simulation) -> void:
 	sim = sim_
 	add_theme_stylebox_override("panel", UITheme.panel_style(16, 14))
 
+	# desktop: everything on one row; touch: two centered rows so the dock
+	# fits a phone screen without shrinking any control
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 6)
+	add_child(outer)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
-	add_child(row)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	outer.add_child(row)
+	var row2 := row
+	if UITheme.touch:
+		row2 = HBoxContainer.new()
+		row2.add_theme_constant_override("separation", 12)
+		row2.alignment = BoxContainer.ALIGNMENT_CENTER
+		outer.add_child(row2)
 
 	play_btn = Button.new()
 	play_btn.tooltip_text = "Play / Pause (Space)"
 	UITheme.style_chip(play_btn, 13)
 	UITheme.set_chip_active(play_btn, true)
-	play_btn.custom_minimum_size = Vector2(52, 36)
+	play_btn.custom_minimum_size = Vector2(64, 48) if UITheme.touch else Vector2(52, 36)
 	play_btn.pressed.connect(func() -> void: set_playing(not sim.playing))
 	row.add_child(play_btn)
 
@@ -62,7 +74,7 @@ func setup(sim_: Simulation) -> void:
 	speed_slider.max_value = 1000
 	speed_slider.step = 1
 	UITheme.style_slider(speed_slider)
-	speed_slider.custom_minimum_size = Vector2(170, 16)
+	speed_slider.custom_minimum_size = Vector2(190, 30) if UITheme.touch else Vector2(170, 16)
 	speed_slider.value_changed.connect(func(v: float) -> void:
 		sim.speed = Fmt.slider_to_speed(v)
 		_refresh_speed_ui(false))
@@ -71,7 +83,8 @@ func setup(sim_: Simulation) -> void:
 	speed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	speed_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	speed_col.add_child(speed_label)
-	row.add_child(speed_col)
+	if not UITheme.touch:
+		row.add_child(speed_col)
 
 	var now_btn := Button.new()
 	now_btn.text = "Now"
@@ -80,19 +93,22 @@ func setup(sim_: Simulation) -> void:
 	now_btn.pressed.connect(func() -> void: sim.reset_now())
 	row.add_child(now_btn)
 
-	row.add_child(_divider())
+	if UITheme.touch:
+		row2.add_child(speed_col)
+
+	row2.add_child(_divider())
 
 	orbits_btn = _toggle_btn("Orbits", "Toggle orbit paths (O)",
 		func() -> void: Events.set_show_orbits(not Events.show_orbits))
-	row.add_child(orbits_btn)
+	row2.add_child(orbits_btn)
 	labels_btn = _toggle_btn("Labels", "Toggle labels (L)",
 		func() -> void: Events.set_show_labels(not Events.show_labels))
-	row.add_child(labels_btn)
+	row2.add_child(labels_btn)
 	vectors_btn = _toggle_btn("Vectors", "Toggle velocity vectors (V)",
 		func() -> void: Events.set_show_vectors(not Events.show_vectors))
-	row.add_child(vectors_btn)
+	row2.add_child(vectors_btn)
 
-	row.add_child(_divider())
+	row2.add_child(_divider())
 
 	var g_col := VBoxContainer.new()
 	g_col.add_theme_constant_override("separation", 3)
@@ -104,7 +120,7 @@ func setup(sim_: Simulation) -> void:
 	g_slider.step = 1
 	g_slider.value = 500
 	UITheme.style_slider(g_slider)
-	g_slider.custom_minimum_size = Vector2(96, 16)
+	g_slider.custom_minimum_size = Vector2(120, 30) if UITheme.touch else Vector2(96, 16)
 	g_slider.value_changed.connect(func(v: float) -> void:
 		sim.set_g_scale(pow(10.0, (v - 500.0) / 500.0))   # 0.1× – 10×
 		g_label.text = "G ×%.2f" % sim.g_scale)
@@ -113,7 +129,7 @@ func setup(sim_: Simulation) -> void:
 	g_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	g_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	g_col.add_child(g_label)
-	row.add_child(g_col)
+	row2.add_child(g_col)
 
 	Events.orbits_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.labels_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
