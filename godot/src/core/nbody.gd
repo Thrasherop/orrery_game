@@ -143,10 +143,24 @@ func leapfrog_substep(h: float, g_scale: float) -> void:
 		vz[i] += az[i] * h2
 
 
-## Mass-weighted center & display refresh — the render/trail frame is
-## BARYCENTRIC (inertial), not heliocentric: when two stars swing each other
-## around, a sun-anchored frame would smear fictitious kinks across every
-## planet's trail.
+## Mass-weighted center & display refresh. The underlying state is tracked in
+## a BARYCENTRIC (inertial) frame so mutual gravity between e.g. two stars is
+## never lost — but display positions are built sun-anchored: only the sun's
+## own (barycentric) position is compressed against the barycenter, and every
+## other body is compressed HELIOCENTRICALLY (relative to the sun) and then
+## placed next to wherever the sun landed. This still shows the sun's real,
+## fully inertial motion (nothing is ignored or fixed at the origin) — it's
+## just computed as translation + local shape instead of one combined vector.
+## That split matters because Units.to_display() is a nonlinear (r^0.62)
+## compression: applying it once to (planet_pos - barycenter) compresses the
+## radial and tangential components of that vector by different factors
+## whenever the vector is large, so once a distant heavy companion drags the
+## barycenter far from the sun, the whole sun+planets cluster shares one huge
+## near-identical offset and gets warped like a fisheye lens (orbits pinch
+## into flat/W shapes near the old sun position). Compressing the sun's own
+## offset and each planet's small, always-well-behaved heliocentric offset
+## separately keeps the local system's shape intact regardless of how far
+## away — or how heavy — a companion body drags the barycenter.
 ## reset_prev=true also snaps prev_disp (used on seed/inject);
 ## reset_prev=false records prev_disp first (per-substep, drives collisions).
 func refresh_display(reset_prev: bool) -> void:
@@ -155,10 +169,16 @@ func refresh_display(reset_prev: bool) -> void:
 	bary_x = b.x
 	bary_y = b.y
 	bary_z = b.z
+	var sun_disp := Vector3.ZERO
+	if n > 0:
+		sun_disp = Units.to_display(Vector3(px[0] - bary_x, py[0] - bary_y, pz[0] - bary_z) + frame_corr)
 	for i in n:
 		if not reset_prev:
 			prev_disp[i] = disp[i]
-		disp[i] = Units.to_display(Vector3(px[i] - bary_x, py[i] - bary_y, pz[i] - bary_z) + frame_corr)
+		if i == 0:
+			disp[i] = sun_disp
+		else:
+			disp[i] = sun_disp + Units.to_display(Vector3(px[i] - px[0], py[i] - py[0], pz[i] - pz[0]))
 		if reset_prev:
 			prev_disp[i] = disp[i]
 

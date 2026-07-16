@@ -217,8 +217,10 @@ func _merge_bodies(i: int, j: int) -> void:
 	nb.merge_parts(si, li)
 	physics_permanent = true
 
-	# impact flash + debris at the point of collision (barycentric display)
-	var impact := Units.to_display(Vector3(nb.px[li] - nb.bary_x, nb.py[li] - nb.bary_y, nb.pz[li] - nb.bary_z))
+	# impact flash + debris at the point of collision — nb.disp[li] is still
+	# valid here (merge_parts only touched the survivor's row, and refresh_display
+	# already ran for this substep), and matches the sun-anchored display frame
+	var impact := nb.disp[li]
 	var effect_scale := maxf(lb.size if sb.is_sun else sb.size, 0.8)
 
 	sb.mass_scale = 1.0    # merged mass becomes the new 1× baseline

@@ -12,9 +12,23 @@ const KMS_PER_AUDAY := 1731.456      # AU/day → km/s
 
 const DIST_K := 26.0
 const DIST_P := 0.62                 # display-distance compression
+# r^0.62 has an unbounded derivative as r -> 0, so tiny real offsets get
+# amplified into large, direction-unstable display jumps. That never showed
+# up in Kepler mode (heliocentric r is always >= Mercury's 0.39 AU there),
+# but in N-body mode every body's display position is relative to the
+# barycenter, and the sun's own barycentric wobble (and any body swinging
+# close past it in an encounter) legitimately gets arbitrarily close to
+# zero. Below this radius, blend to a linear ramp (value-continuous with
+# the curve above it) so the derivative stays bounded — well under the
+# 0.08 AU minimum placement distance, so normal orbits are unaffected.
+const DIST_R0 := 0.02
 
 
 static func dist_scale(r_au: float) -> float:
+	if r_au <= 0.0:
+		return 0.0
+	if r_au < DIST_R0:
+		return DIST_K * pow(DIST_R0, DIST_P) * (r_au / DIST_R0)
 	return DIST_K * pow(r_au, DIST_P)
 
 
