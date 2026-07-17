@@ -3,3 +3,9 @@
 
 # Export output (regenerated via `godot --export-release "Web" build/web/index.html`)
 build/
+
+# Native GDExtension build artifacts (regenerate: see native/README.md)
+bin/*.dll
+bin/*.dll.a
+bin/*.so
+bin/*.wasm

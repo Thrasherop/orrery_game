@@ -1,0 +1,12 @@
+# godot-cpp checkout (clone per README) and all build artifacts — regenerable
+godot-cpp/
+build-cmake/
+bin/
+*.log
+# web module build outputs (regenerate with emcc — see README.md)
+web-wasm/*.js
+web-wasm/*.wasm
+
+# stray object files from build attempts
+*.o
+*.obj

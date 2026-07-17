@@ -1,0 +1,11 @@
+[configuration]
+entry_symbol = "orrery_native_init"
+compatibility_minimum = "4.4"
+
+[libraries]
+; Prototype: one optimized dll for every desktop config so the loader always
+; finds it regardless of debug/release context.
+windows.debug.x86_64 = "res://bin/liborrery_native.dll"
+windows.release.x86_64 = "res://bin/liborrery_native.dll"
+linux.debug.x86_64 = "res://bin/liborrery_native.so"
+linux.release.x86_64 = "res://bin/liborrery_native.so"

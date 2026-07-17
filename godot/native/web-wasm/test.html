@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>nbody wasm test</title></head>
+<body>
+<h1>nbody wasm standalone test</h1>
+<script src="nbody.js"></script>
+<script>
+(function () {
+  function log(s) { console.log(s); }
+  NBodyModule().then(function (m) {
+    var N = 16, count = 20000, H = 0.1;
+    m.ccall('nb_seed_demo', null, ['number'], [N]);
+    // warm-up
+    m.ccall('nb_bench', 'number', ['number', 'number', 'number'], [200, H, 1.0]);
+    var t0 = performance.now();
+    var chk = m.ccall('nb_bench', 'number', ['number', 'number', 'number'], [count, H, 1.0]);
+    var t1 = performance.now();
+    var perBlock = (t1 - t0) * 1000.0 / count; // microseconds
+    log('WASM_BENCH_RESULT us_per_block=' + perBlock.toFixed(4) + ' n=' + N + ' chk=' + chk);
+    log('WASM_DONE');
+  }).catch(function (e) { log('WASM_ERROR ' + (e && e.message ? e.message : e)); log('WASM_DONE'); });
+})();
+</script>
+</body>
+</html>
