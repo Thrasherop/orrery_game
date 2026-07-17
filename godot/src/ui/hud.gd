@@ -73,7 +73,11 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 		add_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 		add_panel.offset_left = 220
 	add_child(add_panel)
-	rail.add_clicked.connect(add_panel.open_panel)
+	# "Add body…" builds around the currently selected body (sun/none → a
+	# free sun-orbiting body, anything else → a moon of the selection)
+	rail.add_clicked.connect(func() -> void:
+		var sel = Events.selected
+		add_panel.open_panel(null if sel == null or sel.is_sun else sel))
 	rail.add_moon_clicked.connect(func(planet: SimBody) -> void:
 		add_panel.open_panel(planet))
 

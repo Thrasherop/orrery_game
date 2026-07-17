@@ -3,8 +3,10 @@ extends PanelContainer
 ## "New celestial body" form: name, mass, distance (log slider), longitude,
 ## latitude, speed, direction — with a live hint (circular/escape speeds) and
 ## a live 3D preview driven through Events.add_preview_changed.
-## With a host planet (open_panel(planet)) the same form places a new MOON:
-## inputs become host-relative, distance switches to 10⁻³ AU.
+## With a host body (open_panel(host) — the rail passes the currently
+## selected body, so "Add body…" builds around whatever is in focus) the
+## same form places a new MOON: inputs become host-relative, distance
+## switches to 10⁻³ AU.
 
 var sim: Simulation
 var host: SimBody = null   # null = sun-relative custom body

@@ -47,6 +47,10 @@ var _multi_gesture := false   # 2+ fingers seen since last touch-down → no tap
 
 var pick_provider: Callable   # -> Array of {body, pos, radius}
 
+# while the add-body panel is open the camera frames the proposed body
+# instead of the selection; the provider yields its live world position
+var _preview_provider := Callable()
+
 
 func _ready() -> void:
 	cam = Camera3D.new()
@@ -238,14 +242,53 @@ func apply_view(tgt: Vector3, yaw_: float, pitch_: float, dist_: float) -> void:
 
 ## animate camera to frame the body (called by main on new selection)
 func fly_to(body: SimBody) -> void:
-	var d := maxf(body.size * 5.5, 7.0)
+	_start_fly(maxf(body.size * 5.5, 7.0), body.display_pos)
+
+
+func _start_fly(view_dist: float, to_pos: Vector3) -> void:
 	var dir := (cam.position - target).normalized()
 	_anim_active = true
 	_anim_t = 0.0
 	_anim_from_target = target
 	_anim_from_pos = cam.position
-	_anim_to_offset = dir * d
-	_prev_target_pos = body.display_pos
+	_anim_to_offset = dir * view_dist
+	_prev_target_pos = to_pos
+
+
+## start framing the add-panel preview: fly to the proposed position, then
+## delta-follow it as the panel's inputs (and the moving anchor) shift it
+func focus_preview(provider: Callable, body_size: float) -> void:
+	_preview_provider = provider
+	var p = provider.call()
+	if p != null:
+		_start_fly(maxf(body_size * 5.5, 7.0), p)
+
+
+func preview_focus_active() -> bool:
+	return _preview_provider.is_valid()
+
+
+## panel closed — hand the camera back to the selection without a jump
+func end_preview_focus() -> void:
+	if not _preview_provider.is_valid():
+		return
+	_preview_provider = Callable()
+	var sel = Events.selected
+	if sel != null:
+		_prev_target_pos = sel.display_pos
+	else:
+		_anim_active = false
+
+
+## what the camera should frame right now: the live preview position while
+## the add panel is open, else the selected body, else null (free camera)
+func _focus_pos() -> Variant:
+	if _preview_provider.is_valid():
+		var p = _preview_provider.call()
+		if p != null:
+			return p
+	var sel = Events.selected
+	return sel.display_pos if sel != null else null
 
 
 static func _ease_in_out(t: float) -> float:
@@ -255,9 +298,9 @@ static func _ease_in_out(t: float) -> float:
 
 
 func update_camera(dt: float) -> void:
-	var selected = Events.selected
-	if selected != null:
-		var tp: Vector3 = selected.display_pos
+	var focus = _focus_pos()
+	if focus != null:
+		var tp: Vector3 = focus
 		if _anim_active:
 			_anim_t = minf(_anim_t + dt / FLY_TIME, 1.0)
 			var k := _ease_in_out(_anim_t)

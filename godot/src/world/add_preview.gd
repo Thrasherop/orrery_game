@@ -1,8 +1,9 @@
 class_name AddPreview
 extends Node3D
 ## Live 3D preview for the add-body panel: wireframe sphere at the injection
-## point, faint circle at the chosen orbital distance, and the starting
-## velocity vector. Follows the sun (placement inputs are sun-relative).
+## point, faint circle at the chosen orbital distance — tilted into the plane
+## the orbit would actually lie in — and the starting velocity vector.
+## Rides on its anchor (the sun, or the host body when placing a moon).
 
 const WIRE_SHADER := preload("res://src/gfx/wireframe.gdshader")
 
@@ -66,17 +67,34 @@ func _apply(cfg: Dictionary) -> void:
 	var st := NBodySystem.state_vector_from_inputs(cfg)
 	var host = cfg.get("host", null)
 	var p: Vector3
+	var ring_r: float
 	if host != null:
 		# moon placement: same linear amplification the moon will render with,
 		# so the wireframe sits exactly where the moon will appear
 		var k: float = MoonMath.add_disp_k(host.size, cfg.dist_au)
 		p = Vector3(st.p[0], st.p[1], st.p[2]) * k
 		_sphere.scale = Vector3.ONE * clampf(0.9 * pow(cfg.mass_e, 1.0 / 3.0), 0.12, 1.2)
-		_ring.scale = Vector3.ONE * (cfg.dist_au * k)
+		ring_r = cfg.dist_au * k
 	else:
 		p = Units.to_display(Vector3(st.p[0], st.p[1], st.p[2]))
 		_sphere.scale = Vector3.ONE * clampf(0.9 * pow(cfg.mass_e, 1.0 / 3.0), 0.35, 3.4)
-		_ring.scale = Vector3.ONE * Units.dist_scale(cfg.dist_au)
+		ring_r = Units.dist_scale(cfg.dist_au)
+	# tilt the guide circle into the plane the orbit would actually lie in —
+	# spanned by the (anchor-relative) position and launch velocity — so it
+	# always passes through the injection point, whatever the latitude
+	var pr := Vector3(st.p[0], st.p[1], st.p[2])
+	var vv := Vector3(st.v[0], st.v[1], st.v[2])
+	var x_axis := pr.normalized()
+	var normal := pr.cross(vv)
+	if normal.length_squared() < 1e-16:
+		# zero or purely radial velocity picks no plane — assume the
+		# horizontal prograde direction the panel's 0° corresponds to
+		var th: float = cfg.lon_deg * Units.DEG
+		normal = pr.cross(Vector3(-sin(th), 0.0, -cos(th)))
+	if normal.length_squared() < 1e-16:
+		normal = Vector3.UP
+	normal = normal.normalized()
+	_ring.basis = Basis(x_axis * ring_r, normal * ring_r, x_axis.cross(normal) * ring_r)
 	_sphere.position = p
 	_arrow.position = p
 	var v := Vector3(st.v[0], st.v[1], st.v[2])
@@ -87,10 +105,20 @@ func _apply(cfg: Dictionary) -> void:
 	_arrow.visible = cfg.speed_kms > 0.0
 
 
-## placement inputs are relative to the sun — or to the host planet when
+## placement inputs are relative to the sun — or to the host body when
 ## adding a moon — so the whole preview rides on that anchor
 func follow_anchor(sun_pos: Vector3) -> void:
-	if not visible:
-		return
 	var host = _cfg.get("host", null) if _cfg != null else null
 	position = host.display_pos if host != null else sun_pos
+
+
+## world-space position of the previewed body (null while hidden) — the
+## camera rig frames this point while the add panel is open
+func focus_position() -> Variant:
+	if not visible or _cfg == null:
+		return null
+	return position + _sphere.position
+
+
+func focus_size() -> float:
+	return _sphere.scale.x

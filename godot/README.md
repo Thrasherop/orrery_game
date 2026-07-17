@@ -25,8 +25,10 @@ godot --path godot
 - Drag to orbit, scroll to zoom, right/middle-drag to pan
 - Click a planet (or its label / rail entry) to select and follow it
 - `Space` pause · `O` orbits · `L` labels · `V` velocity vectors · `P` cycle path frame · `Esc` deselect / close panel
-- "Add body…" in the left rail injects a custom body and switches the whole
-  system to live N-body gravity
+- "Add body…" in the left rail injects a custom body around the currently
+  selected body (a moon of it; sun or nothing selected → a free sun-orbiting
+  body) and switches the whole system to live N-body gravity — the camera
+  frames the proposed position while the form is open
 
 ## Architecture
 

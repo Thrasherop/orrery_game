@@ -53,6 +53,7 @@ func _ready() -> void:
 	Events.select_requested.connect(_on_select_requested)
 	Events.deselect_requested.connect(_deselect)
 	Events.body_removed.connect(_on_body_removed)
+	Events.add_preview_changed.connect(_on_add_preview_changed)
 
 	_booted = true
 	print("[orrery] boot complete — %d textures, %d bodies" % [factory.textures.size(), sim.all_bodies().size()])
@@ -151,3 +152,12 @@ func _deselect() -> void:
 func _on_body_removed(body) -> void:
 	if Events.selected == body:
 		_deselect()
+
+
+## add-body panel opened/edited/closed: frame the proposed body while the
+## panel is open (fly there once, then update_camera tracks it live)
+func _on_add_preview_changed(cfg) -> void:
+	if cfg == null:
+		camera_rig.end_preview_focus()
+	elif not camera_rig.preview_focus_active():
+		camera_rig.focus_preview(world.preview.focus_position, world.preview.focus_size())

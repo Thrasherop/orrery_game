@@ -56,7 +56,11 @@ func _ready() -> void:
 	browser.store.delete_folder(folder)
 
 	# --- gesture unit checks against the rig ------------------------------
+	# the add panel flew the camera to the proposed body's position — return
+	# to the boot overview so Earth is on screen for the tap check below
 	var rig: CameraRig = main.camera_rig
+	rig.apply_view(Vector3.ZERO, 0.313, 0.379, 167.5)
+	await get_tree().process_frame
 	var d0: float = rig.dist_goal
 	_pinch(rig, Vector2(500, 270), Vector2(700, 270), Vector2(560, 270), Vector2(640, 270))
 	var ok_out := rig.dist_goal > d0 * 1.5
