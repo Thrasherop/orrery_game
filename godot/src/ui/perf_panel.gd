@@ -9,6 +9,7 @@ const MAX_ROWS := 6
 
 var sim: Simulation
 var _status: Label
+var _stats: Label
 var _rows_box: VBoxContainer
 var _hint: Label
 var _accum := 0.0
@@ -27,6 +28,10 @@ func setup(sim_: Simulation) -> void:
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(228, 0)
 	box.add_child(_status)
+	_stats = UITheme.make_label("", 9, UITheme.MUTED)
+	_stats.modulate.a = 0.8
+	_stats.visible = false
+	box.add_child(_stats)
 	_rows_box = VBoxContainer.new()
 	_rows_box.add_theme_constant_override("separation", 3)
 	box.add_child(_rows_box)
@@ -54,8 +59,17 @@ func _refresh() -> void:
 		c.queue_free()
 	if not sim.physics_active:
 		_status.text = "Kepler ephemeris — planets ride exact rails, nothing to integrate."
+		_stats.visible = false
 		_hint.visible = false
 		return
+	var p: Dictionary = sim.perf
+	if p.is_empty():
+		_stats.visible = false
+	else:
+		var ms: float = (p.us_step + p.us_display + p.us_collide + p.us_trails) / 1000.0
+		_stats.text = "%d blocks/frame · %s pair forces · %.1f ms" % [
+			p.steps, Fmt.fmt_big(p.pair_evals), ms]
+		_stats.visible = true
 	var costs := sim.step_costs()
 	if sim.lag_ratio < 0.9:
 		_status.text = "Physics-limited: clock running at ×%.1f of the requested speed." % sim.lag_ratio

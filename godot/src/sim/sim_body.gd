@@ -55,6 +55,11 @@ var catalog_disp_k := 0.0         # dist/a_au — restored when re-captured by h
 var disp_k_prev := 1.0
 var bind_t := 1.0                 # 0→1 display blend after a host change
 
+# cached row in NBodySystem's packed arrays while simulated (−1 = not in the
+# integrator). Lets NBodySystem.index_of() skip its linear scan; kept correct
+# by add_body/remove_at, self-heals if it ever goes stale.
+var nb_index := -1
+
 # live per-frame outputs from the simulation
 var r_au := 0.0             # sun-relative distance
 var vel_kms := 0.0          # sun-relative speed

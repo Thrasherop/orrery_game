@@ -25,6 +25,16 @@ const MOON_TRAIL_MAX := 384              # moon trail buffer (tight coils, ~3 or
 const MAX_SUBSTEPS := 120
 const H_MIN := 1e-4                      # days — a near-contact pair can't stall the budget
 
+# Block time-stepping: fast moons subcycle inside a 0.1-day block instead of
+# forcing tiny steps on the whole system (NBodySystem.step_block). A single
+# fast moon no longer collapses the global step. Set false to fall back to the
+# original global-substep integrator (kept as the k==1 fast path anyway).
+const USE_BLOCK := true
+# Block size cap as a fraction of the tightest pair's dynamical time: with
+# K_MAX/SAFETY = 8/20, H ≤ 0.4·tau_min guarantees the tightest body resolves at
+# the deepest rung (h = tau_min/20, the old global step's finest resolution).
+const H_TAU_FRAC := 0.4
+
 var sun: SimBody
 var planets: Array = []      # SimBody, mutates when planets merge away
 var moons: Array = []        # SimBody (simulated moons, catalog + user-added)
@@ -40,6 +50,11 @@ var g_scale := 1.0
 var moons_simulated := false
 var sim_expensive_moons := true   # include Catalog.EXPENSIVE_MOONS (Io, Europa, Triton)
 var lag_ratio := 1.0              # smoothed integrated/requested time per tick
+
+# Last _step_physics breakdown for the perf panel / tests: substeps taken,
+# pair-force evaluations, µs per phase, last substep size. Refilled every
+# physics tick; stale (or empty) outside physics.
+var perf := {}
 
 var physics_active := false
 # `physics_permanent` is set after any merger / mass edit / G change — the
@@ -471,7 +486,7 @@ func _vel_au_day(b: SimBody) -> Vector3:
 func step_costs() -> Array:
 	if not physics_active:
 		return []
-	var taus := nb.per_body_tau(g_scale)
+	var taus := nb.tau_body   # refreshed every compute_accel; no extra O(n²) pass
 	var out: Array = []
 	for i in nb.count():
 		var h := clampf(taus[i] / 20.0, H_MIN, 0.1)
@@ -480,6 +495,15 @@ func step_costs() -> Array:
 			out.append({ body = nb.bodies[i], factor = f })
 	out.sort_custom(func(a, b) -> bool: return a.factor > b.factor)
 	return out
+
+
+## Conserved quantities of the live integration (energy / |momentum| /
+## |angular momentum|) — diagnostics for the regression tests and perf panel.
+## Empty outside physics mode.
+func conserved() -> Dictionary:
+	if not physics_active:
+		return {}
+	return nb.conserved(g_scale)
 
 
 ## analytic display position of a Kepler-mode moon at an arbitrary sim-day
@@ -509,6 +533,8 @@ func enter_physics() -> void:
 
 func exit_physics() -> void:
 	physics_active = false
+	for b in all_bodies():
+		b.nb_index = -1   # rows are gone; a fresh enter_physics reassigns them
 	nb = null
 	sun.display_pos = Vector3.ZERO
 	sun.trail_clear()
@@ -685,29 +711,59 @@ func _step_physics(dt_days: float, end_day: float) -> void:
 	var day := end_day - dt_days
 	var remaining := dt_days
 	var steps := 0
+	var work := 0.0            # full-force-pass equivalents (the budget currency)
+	var pair_evals := 0
+	var us_step := 0
+	var us_display := 0
+	var us_collide := 0
+	var us_trails := 0
+	var h_last := 0.0
 	while remaining > 1e-9:
-		steps += 1
-		if steps > MAX_SUBSTEPS:
+		if work >= MAX_SUBSTEPS:
 			break
-		# adaptive step: 0.1 d normally, but during close encounters (and for
-		# fast moons like Io) shrink to ~1/20 of the tightest pair's dynamical
-		# timescale so the motion is integrated instead of blasted through.
-		# H_MIN keeps a near-contact pair from stalling the whole budget —
-		# below that scale the merge rule resolves the encounter anyway.
-		var h := minf(clampf(nb.tau_min / 20.0, H_MIN, 0.1), remaining)
-		nb.leapfrog_substep(h, g_scale)
+		steps += 1
+		# One block advances H days. Cruise at 0.1 d; during close encounters
+		# shrink to H_TAU_FRAC·tau_min so the tightest pair still resolves at
+		# the deepest rung. H_MIN keeps a near-contact pair from stalling the
+		# budget — below it the merge rule resolves the encounter anyway. Fast
+		# moons subcycle inside the block instead of shrinking H for everyone.
+		var h: float
+		if USE_BLOCK:
+			h = minf(clampf(nb.tau_min * H_TAU_FRAC, H_MIN, 0.1), remaining)
+		else:
+			h = minf(clampf(nb.tau_min / 20.0, H_MIN, 0.1), remaining)
+		var t0 := Time.get_ticks_usec()
+		var nn := nb.count()
+		if USE_BLOCK:
+			nb.step_block(h, g_scale)
+			work += 1.0 + 2.0 * float(nb.last_fast_evals) / maxf(nn * nn, 1.0)
+			pair_evals += nn * (nn - 1) / 2 + nb.last_fast_evals
+		else:
+			nb.leapfrog_substep(h, g_scale)
+			work += 1.0
+			pair_evals += nn * (nn - 1) / 2
+		var t1 := Time.get_ticks_usec()
+		us_step += t1 - t0
+		h_last = h
 		day += h
 		remaining -= h
 
-		# barycentric display positions per substep — drive trails & collisions
+		# barycentric display positions — once per block (H ≤ 0.1 d, the old
+		# cruise cadence); drives trails & collisions
 		nb.refresh_display(false)
+		var t2 := Time.get_ticks_usec()
+		us_display += t2 - t1
 
-		# collisions: closest approach over each substep's motion segment,
-		# so fast bodies can't tunnel through each other between steps.
-		# Bodies merge when their rendered meshes substantially overlap.
+		# collisions: closest approach over the block's motion, so fast bodies
+		# can't tunnel through each other between blocks. Bodies merge when
+		# their rendered meshes substantially overlap.
 		# Bound moons render at host + real offset × disp_k, so their raw
 		# display position sits INSIDE the host's exaggerated sphere — test
-		# those pairs in real space, scaled back into moon display units.
+		# those pairs in real space, sharpened by enc_distance (the finest
+		# separation seen across a subcycling moon's substeps), scaled into
+		# moon display units. Free pairs use the display-space swept test as
+		# before; H shrinks toward any free-free collision (tau_min drops), so
+		# the straight-segment test stays accurate exactly when it must.
 		var merged := false
 		for i in range(nb.count() - 1):
 			if merged:
@@ -722,13 +778,19 @@ func _step_physics(dt_days: float, end_day: float) -> void:
 					bound_k = maxf(bound_k, b.disp_k)
 				var hit: bool
 				if bound_k > 0.0:
-					hit = nb.real_distance(i, j) * bound_k < 0.75 * (a.size + b.size)
+					var rmin := nb.real_distance(i, j)
+					var enc := nb.enc_distance(i, j)
+					if enc < rmin:
+						rmin = enc
+					hit = rmin * bound_k < 0.75 * (a.size + b.size)
 				else:
 					hit = nb.swept_distance(i, j) < 0.75 * (a.size + b.size)
 				if hit:
 					_merge_bodies(i, j)
 					merged = true
 					break
+		var t3 := Time.get_ticks_usec()
+		us_collide += t3 - t2
 
 		# trails: sample on cadence, or sooner whenever the velocity direction
 		# has swung > 4° since the last sample — sharp encounters stay smooth.
@@ -759,6 +821,12 @@ func _step_physics(dt_days: float, end_day: float) -> void:
 				var r_sun := Vector3(nb.px[i] - nb.px[0], nb.py[i] - nb.py[0], nb.pz[i] - nb.pz[0]).length()
 				b.trail_interval = _trail_interval(b, r_sun)
 				b.trail_next_day = day + b.trail_interval
+		us_trails += Time.get_ticks_usec() - t3
+	perf = {
+		steps = steps, work = work, pair_evals = pair_evals, h_last = h_last,
+		us_step = us_step, us_display = us_display,
+		us_collide = us_collide, us_trails = us_trails,
+	}
 	# hit the substep budget: let the clock wait for the physics rather than
 	# corrupt the integration. lag_ratio feeds the HUD "physics-limited" badge.
 	lag_ratio = lag_ratio * 0.9 + 0.1 * (1.0 if dt_days <= 0.0 else (dt_days - remaining) / dt_days)
