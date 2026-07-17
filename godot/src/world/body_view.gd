@@ -13,7 +13,10 @@ var star_glow: MeshInstance3D = null
 var _base_size := 1.0            # display radius the mesh was built with
 
 
-func setup(b: SimBody, textures: Dictionary) -> void:
+## decorative_moon_names: which of b.moons to render as kinematic pivots —
+## null = all (legacy decorative mode), [] = none (they're simulated bodies
+## with views of their own), or a subset (expensive moons excluded from the sim)
+func setup(b: SimBody, textures: Dictionary, decorative_moon_names = null) -> void:
 	body = b
 	name = b.body_name
 	_base_size = b.size
@@ -37,6 +40,8 @@ func setup(b: SimBody, textures: Dictionary) -> void:
 		var tex_key: String = b.body_name
 		if b.custom:
 			tex_key = "custom%d" % b.tex.get("palette_index", 0)
+		elif b.is_moon:
+			tex_key = "moon:%s:%s" % [b.home_host_name, b.body_name]
 		if textures.has(tex_key):
 			mat.albedo_texture = textures[tex_key]
 		else:
@@ -60,6 +65,8 @@ func setup(b: SimBody, textures: Dictionary) -> void:
 
 	for idx in b.moons.size():
 		var md: Dictionary = b.moons[idx]
+		if decorative_moon_names != null and not (md.name in decorative_moon_names):
+			continue   # this moon is simulated — it has a BodyView of its own
 		var pivot := Node3D.new()
 		pivot.rotation.z = md.get("incl", 3.0) * Units.DEG
 		var moon_size: float = md["size"]   # ["size"] — dot access hits Dictionary.size()

@@ -5,15 +5,20 @@ class_name Snapshot
 ## sim_ms (~1.7e12) and the N-body state vectors need all float64 digits).
 ##
 ## Kepler-mode snapshots carry no positions — the ephemeris reproduces them
-## from `el` + sim_ms. Physics-mode snapshots store each body's raw N-body
-## row (`phys`) inline, and bodies are re-added sun-first, planets, then
-## customs, preserving nbody's index-0-is-the-sun invariant.
+## from `el` + sim_ms, and simulated moons are regenerated from the catalog
+## (their Kepler-mode motion is fully analytic). Physics-mode snapshots store
+## each body's raw N-body row (`phys`) inline, and bodies are re-added
+## sun-first, planets, moons, then customs, preserving nbody's
+## index-0-is-the-sun invariant. Moon `host` is stored by name and resolved
+## after every body exists (a stolen moon lists its captor).
 ##
 ## Not persisted: trails (backfilled/cleared on apply), selection (always
 ## dropped on apply — restored SimBodys are new objects), and per-frame
 ## derived fields (recomputed by one tick(0.0)).
+##
+## v1 saves (pre-moon-update) load with moons_simulated = false.
 
-const VERSION := 1
+const VERSION := 2
 
 
 static func capture(sim: Simulation, rig: CameraRig) -> Dictionary:
@@ -27,9 +32,12 @@ static func capture(sim: Simulation, rig: CameraRig) -> Dictionary:
 			physics_active = sim.physics_active,
 			physics_permanent = sim.physics_permanent,
 			custom_count = sim.custom_count,
+			moons_simulated = sim.moons_simulated,
+			sim_expensive_moons = sim.sim_expensive_moons,
 		},
 		sun = { mass_scale = sim.sun.mass_scale },
 		planets = [],
+		moons = [],
 		customs = [],
 		camera = _camera_state(rig),
 		toggles = {
@@ -46,6 +54,34 @@ static func capture(sim: Simulation, rig: CameraRig) -> Dictionary:
 		if sim.physics_active:
 			e.phys = _phys_of(sim.nb, b)
 		d.planets.append(e)
+	# moons carry live state only in physics mode; Kepler-mode moons are
+	# analytic and regenerate from the catalog on apply
+	if sim.physics_active:
+		for b: SimBody in sim.moons:
+			var e := {
+				name = b.body_name,
+				home = b.home_host_name,
+				custom = b.custom,
+				size = b.size,
+				mass_scale = b.mass_scale,
+				a_au = b.a_au,
+				incl = b.incl_deg,
+				phase0 = b.phase0,
+				orbit_sign = b.orbit_sign,
+				mass_solar = b.mass_solar,
+				disp_k = b.disp_k,
+				catalog_disp_k = b.catalog_disp_k,
+				host = (b.host.body_name if b.host != null else ""),
+				phys = _phys_of(sim.nb, b),
+			}
+			if b.custom:
+				e.color = b.color.to_html(false)
+				e.mass_e = b.mass_e
+				e.body_type = b.body_type
+				e.desc = b.desc
+				e.period_days = b.period_days
+				e.palette_index = int(b.tex.get("palette_index", 0))
+			d.moons.append(e)
 	for b: SimBody in sim.customs:
 		d.customs.append({
 			name = b.body_name,
@@ -110,6 +146,52 @@ static func apply(sim: Simulation, rig: CameraRig, d: Dictionary) -> bool:
 		new_planets.append(row[0])
 	sim.planets = new_planets
 
+	# moons: replace wholesale. Physics-mode saves restore each moon's live
+	# state below; Kepler-mode saves regenerate them from the catalog (see
+	# the non-physics branch — their analytic state needs no persistence).
+	for b: SimBody in sim.moons:
+		Events.body_removed.emit(b)
+	sim.moons.clear()
+	sim.moons_simulated = bool(s.get("moons_simulated", false))
+	sim.sim_expensive_moons = bool(s.get("sim_expensive_moons", true))
+	var moon_rows: Array = []
+	if bool(s.physics_active):
+		for e in d.get("moons", []):
+			var b: SimBody
+			if bool(e.get("custom", false)):
+				b = SimBody.new()
+				b.body_name = str(e.get("name", "Moon"))
+				b.color = Color(str(e.get("color", "8fd0a0")))
+				b.custom = true
+				b.is_moon = true
+				b.mass_e = float(e.get("mass_e", 0.01))
+				b.body_type = str(e.get("body_type", "Custom moon"))
+				b.desc = str(e.get("desc", ""))
+				b.tex = { kind = "custom", palette_index = int(e.get("palette_index", 0)) }
+				b.period_days = float(e.get("period_days", 27.0))
+				b.day_hours = 24.0
+				b.init_trail(Simulation.MOON_TRAIL_MAX, 0.5)
+				b.trail_interval = maxf(b.period_days, 0.1) / 128.0
+			else:
+				var md := _find_moon_dict(defs, str(e.get("home", "")), str(e.get("name", "")))
+				if md.is_empty():
+					continue   # unknown moon name — skip rather than fail the load
+				b = sim.make_moon_from_dict(str(e.get("home", "")), md, 0)
+			b.home_host_name = str(e.get("home", ""))
+			b.size = float(e.get("size", b.size))
+			b.mass_scale = float(e.get("mass_scale", 1.0))
+			b.a_au = float(e.get("a_au", b.a_au))
+			b.incl_deg = float(e.get("incl", b.incl_deg))
+			b.phase0 = float(e.get("phase0", b.phase0))
+			b.orbit_sign = float(e.get("orbit_sign", b.orbit_sign))
+			b.mass_solar = float(e.get("mass_solar", b.mass_solar))
+			b.disp_k = float(e.get("disp_k", b.disp_k))
+			b.catalog_disp_k = float(e.get("catalog_disp_k", b.catalog_disp_k))
+			b.bind_t = 1.0
+			sim.moons.append(b)
+			moon_rows.append([b, e])
+			Events.body_added.emit(b)
+
 	# customs: replace wholesale (their textures are the boot-time palette set)
 	for b: SimBody in sim.customs:
 		Events.body_removed.emit(b)
@@ -140,10 +222,21 @@ static func apply(sim: Simulation, rig: CameraRig, d: Dictionary) -> bool:
 	sim.physics_permanent = bool(s.get("physics_permanent", false))
 	sim.custom_count = int(s.get("custom_count", d.customs.size()))
 
+	# moon hosts are stored by name — resolve now that every body exists
+	# (a stolen moon's host can be a custom body built after the moons)
+	var host_by_name := {}
+	for b: SimBody in sim.planets:
+		host_by_name[b.body_name] = b
+	for b: SimBody in sim.customs:
+		host_by_name[b.body_name] = b
+	for row in moon_rows:
+		row[0].host = host_by_name.get(str(row[1].get("host", "")), null)
+
 	if bool(s.physics_active):
 		var nb := NBodySystem.new()
 		var rows: Array = [[sim.sun, d.sun]]
 		rows.append_array(planet_rows)
+		rows.append_array(moon_rows)
 		rows.append_array(custom_rows)
 		for row in rows:
 			var i := nb.add_body(row[0], 1.0)
@@ -164,6 +257,7 @@ static func apply(sim: Simulation, rig: CameraRig, d: Dictionary) -> bool:
 		sim.sun.display_pos = Vector3.ZERO
 		for b: SimBody in sim.planets:
 			sim.backfill_planet_trail(b)
+		sim._rebuild_moons()   # Kepler-mode moons are analytic — catalog + flags suffice
 
 	sim.tick(0.0)   # recompute r_au / vel_kms / display_pos in either mode
 
@@ -184,6 +278,8 @@ static func apply(sim: Simulation, rig: CameraRig, d: Dictionary) -> bool:
 
 
 ## The pristine solar system at the current date — Reset applies this.
+## Kepler mode with no moon entries: apply() regenerates simulated moons from
+## the catalog per the flags, honoring the user's cross-save default.
 static func default_snapshot() -> Dictionary:
 	var planets: Array = []
 	for def in Catalog.make_planets():
@@ -198,9 +294,12 @@ static func default_snapshot() -> Dictionary:
 			physics_active = false,
 			physics_permanent = false,
 			custom_count = 0,
+			moons_simulated = Prefs.moons_default(),
+			sim_expensive_moons = true,
 		},
 		sun = { mass_scale = 1.0 },
 		planets = planets,
+		moons = [],
 		customs = [],
 		camera = _default_camera(),
 		toggles = { orbits = true, labels = true, vectors = true },
@@ -226,12 +325,28 @@ static func validate(d) -> bool:
 		for e in d.planets:
 			if not _has_phys(e):
 				return false
+		for e in d.get("moons", []):
+			if not _has_phys(e):
+				return false
 		for e in d.customs:
 			if not _has_phys(e):
 				return false
-	elif not (d.customs as Array).is_empty():
-		return false   # custom bodies only exist in physics mode
+	else:
+		if not (d.customs as Array).is_empty():
+			return false   # custom bodies only exist in physics mode
+		if not (d.get("moons", []) as Array).is_empty():
+			return false   # Kepler-mode moons are analytic — never persisted
 	return true
+
+
+## catalog moon dict by (home planet, moon name); {} when unknown
+static func _find_moon_dict(defs: Dictionary, home: String, mname: String) -> Dictionary:
+	if not defs.has(home):
+		return {}
+	for md in (defs[home] as BodyDef).moons:
+		if md.name == mname:
+			return md
+	return {}
 
 
 static func _has_phys(e) -> bool:

@@ -1,22 +1,11 @@
-Better android UI/UX:
-    - Menus are quite small
-    - can't zoom in and out with two fingers
-    - 
 
-Save system:
-    - Reset
-    - Save/load experiments as they are
-    - Checkpoint (like, same save but can go back to previous versions of that save)
+~~Enable the user to add new orbital bodies around something other than the sun~~ ✅ done (moon update: long-press a planet in the rail → "Add moon…"; speed hint is host-relative)
 
-
-Orbital periods of moons need to be correct (e.g. the moon orbits the earth 14 times per year)
 
 Toggle to switch between a hilio centric orbit, or to show the movement through space (like, as the whole system moves)
 
 moving latitude/longitude should move the orbital line. Right now, it stays level on the solar system plane
 
-
-add new orbital bodies around something other than the sun
 
 show object radaii to scale (yes, planets will be so small that you will only see the orbits)
 
@@ -28,7 +17,7 @@ save state
 
 edit properties of existing objects
 
-moons need to be able to be stolen
+~~moons need to be able to be stolen~~ ✅ done (moon update: moons are simulated N-body participants with Hill-sphere host binding)
 
 asteroid belt maybe?
 

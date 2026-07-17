@@ -16,7 +16,7 @@ extends RefCounted
 
 const ROOT := "user://saves"
 const EXT := ".save.json"
-const VERSION := 1
+const VERSION := 2   # v2 adds simulated moons (snapshot.moons + sim flags)
 
 
 static func now_ms() -> float:

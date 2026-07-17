@@ -193,5 +193,9 @@ func _on_mass_slider(value: float) -> void:
 
 func _on_remove() -> void:
 	var b = Events.selected
-	if b != null and b.custom:
+	if b == null or not b.custom:
+		return
+	if b.is_moon:
+		sim.remove_moon(b)
+	else:
 		sim.remove_custom_body(b)

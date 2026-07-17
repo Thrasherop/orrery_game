@@ -31,6 +31,8 @@ func setup(sim_: Simulation, textures_: Dictionary) -> void:
 
 	for b in sim.planets:
 		_add_body_view(b)
+	for b in sim.moons:
+		_add_body_view(b)
 
 	effects = ImpactEffects.new()
 	add_child(effects)
@@ -44,11 +46,12 @@ func setup(sim_: Simulation, textures_: Dictionary) -> void:
 	Events.selection_changed.connect(_on_selection_changed)
 	Events.orbits_toggled.connect(_on_orbits_toggled)
 	Events.vectors_toggled.connect(_on_vectors_toggled)
+	Events.moons_mode_changed.connect(_on_moons_mode_changed)
 
 
 func _add_body_view(b: SimBody) -> void:
 	var v := BodyView.new()
-	v.setup(b, textures)
+	v.setup(b, textures, sim.decorative_moon_names(b))
 	add_child(v)
 	body_views[b] = v
 	_add_trail(b)
@@ -58,6 +61,18 @@ func _add_body_view(b: SimBody) -> void:
 		arrow.visible = Events.show_vectors
 		add_child(arrow)
 		arrows[b] = arrow
+
+
+## moon flags flipped: planet views rebuild in place so their decorative moon
+## pivots match (simulated moons come and go via body_added/body_removed)
+func _on_moons_mode_changed() -> void:
+	for b in sim.planets:
+		if body_views.has(b):
+			body_views[b].queue_free()
+		var v := BodyView.new()
+		v.setup(b, textures, sim.decorative_moon_names(b))
+		add_child(v)
+		body_views[b] = v
 
 
 func _add_trail(b: SimBody) -> void:
@@ -121,11 +136,18 @@ func update_world(dt: float, days: float, cam: Camera3D) -> void:
 		arrow.position = b.display_pos
 		if b.vel_display.length_squared() > 1e-14:
 			arrow.set_direction(b.vel_display)
-		var alen := clampf(2.5 + b.vel_kms * 0.3, 2.5, 26.0)
+		# moons: vel_display is host-relative (a few km/s), and the arrow
+		# should stay in scale with the moon's small on-screen orbit
+		var speed_kms: float = b.vel_kms
+		var floor_len := 2.5
+		if b.is_moon:
+			speed_kms = b.vel_display.length() * Units.KMS_PER_AUDAY
+			floor_len = 1.2
+		var alen := clampf(floor_len + speed_kms * 0.3, floor_len, 26.0)
 		arrow.set_arrow_length(alen, alen * 0.22, alen * 0.13)
 	starfield.update_rotation(dt)
 	effects.update_effects(dt)
-	preview.follow_sun(sim.sun.display_pos)
+	preview.follow_anchor(sim.sun.display_pos)
 
 
 ## pick candidates for the camera rig's ray caster

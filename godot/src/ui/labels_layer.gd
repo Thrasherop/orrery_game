@@ -62,5 +62,11 @@ func update_labels() -> void:
 		if off or Events.selected == b:
 			btn.visible = false
 			continue
+		# a bound moon's label would sit on top of its host's from any
+		# distance — hide it until the camera is close enough to separate them
+		if b.is_moon and b.host != null and not rig.cam.is_position_behind(b.host.display_pos):
+			if sp.distance_to(rig.cam.unproject_position(b.host.display_pos)) < 40.0:
+				btn.visible = false
+				continue
 		btn.visible = true
 		btn.position = sp - Vector2(btn.size.x / 2.0, btn.size.y + 14.0)

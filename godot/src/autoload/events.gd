@@ -16,6 +16,7 @@ signal bodies_changed()            # rail/labels should rebuild
 
 # simulation events ------------------------------------------------------
 signal mode_changed()              # Kepler <-> N-body, or G scale changed
+signal moons_mode_changed()        # simulate-moons flags flipped (Kepler mode only)
 signal merged(survivor, loser_name, impact_pos, color, effect_scale)
 signal toast_requested(msg)
 

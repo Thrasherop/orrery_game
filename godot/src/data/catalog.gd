@@ -8,6 +8,11 @@ const PLANET_MASS := {                # solar masses
 	"Jupiter": 9.548e-4, "Saturn": 2.859e-4, "Uranus": 4.366e-5, "Neptune": 5.151e-5,
 }
 
+# Moons whose short dynamical time forces tiny N-body substeps (tau < ~1 day).
+# Developer-editable: names listed here are excluded from the simulation when
+# the "fast inner moons" setting is off, and stay decorative instead.
+const EXPENSIVE_MOONS := ["Io", "Europa", "Triton"]
+
 const CUSTOM_PALETTES := [
 	{ color = "8fd0a0", tex = { base = "#5f9c72", spots = ["#487d59", "#79b78b", "#3e6b4c"] } },
 	{ color = "d68fb8", tex = { base = "#a4587e", spots = ["#87476a", "#c07399", "#6e3a57"] } },
@@ -57,7 +62,7 @@ static func make_planets() -> Array:
 		type = "Terrestrial planet",
 		desc = "The only known world with liquid-water oceans and life. Its large moon stabilises the axial tilt that gives it seasons.",
 		tex = { kind = "earth" },
-		moons = [{ name = "Moon", size = 0.28, dist = 2.3, period = 27.321661, incl = 5.1, color = "#9a9a96", spots = ["#7d7d78", "#b3b3ae", "#6b6b66"] }],
+		moons = [{ name = "Moon", size = 0.28, dist = 2.3, period = 27.321661, incl = 5.1, a_au = 0.002570, mass = 3.69e-8, radius_km = 1737.0, color = "#9a9a96", spots = ["#7d7d78", "#b3b3ae", "#6b6b66"] }],
 	}))
 
 	out.append(BodyDef.make({
@@ -79,10 +84,10 @@ static func make_planets() -> Array:
 		desc = "More massive than every other planet combined. The Great Red Spot is a storm wider than Earth that has raged for centuries.",
 		tex = { kind = "gas", stops = [["#c8a27c", 0.0], ["#e2c8a4", 0.14], ["#a97f5c", 0.26], ["#e8d3b0", 0.38], ["#b58763", 0.52], ["#dcc09a", 0.64], ["#966a4e", 0.72], ["#caa27a", 0.78], ["#e5cca8", 0.9], ["#b08258", 1.0]], streak = 0.8, spot = "#c65f3f" },
 		moons = [
-			{ name = "Io", size = 0.16, dist = 3.7, period = 1.769, incl = 2.0, color = "#d8b84a", spots = ["#b7952f", "#e8d078", "#96712a"] },
-			{ name = "Europa", size = 0.14, dist = 4.3, period = 3.551, incl = 1.0, color = "#cbb9a0", spots = ["#b39f85", "#e0d3bf", "#a08b70"] },
-			{ name = "Ganymede", size = 0.22, dist = 5.0, period = 7.155, incl = 2.5, color = "#8f8a80", spots = ["#767268", "#a8a298", "#5f5b52"] },
-			{ name = "Callisto", size = 0.20, dist = 5.8, period = 16.689, incl = 2.0, color = "#6b6257", spots = ["#544c42", "#847a6d", "#453e35"] },
+			{ name = "Io", size = 0.16, dist = 3.7, period = 1.769, incl = 2.0, a_au = 0.002819, mass = 4.50e-8, radius_km = 1822.0, color = "#d8b84a", spots = ["#b7952f", "#e8d078", "#96712a"] },
+			{ name = "Europa", size = 0.14, dist = 4.3, period = 3.551, incl = 1.0, a_au = 0.004486, mass = 2.41e-8, radius_km = 1561.0, color = "#cbb9a0", spots = ["#b39f85", "#e0d3bf", "#a08b70"] },
+			{ name = "Ganymede", size = 0.22, dist = 5.0, period = 7.155, incl = 2.5, a_au = 0.007155, mass = 7.45e-8, radius_km = 2634.0, color = "#8f8a80", spots = ["#767268", "#a8a298", "#5f5b52"] },
+			{ name = "Callisto", size = 0.20, dist = 5.8, period = 16.689, incl = 2.0, a_au = 0.012585, mass = 5.41e-8, radius_km = 2410.0, color = "#6b6257", spots = ["#544c42", "#847a6d", "#453e35"] },
 		],
 	}))
 
@@ -95,7 +100,7 @@ static func make_planets() -> Array:
 		desc = "Less dense than water, ringed by billions of shards of nearly pure ice — the remains of a shattered moon or comet.",
 		tex = { kind = "gas", stops = [["#dcc296", 0.0], ["#ead6ac", 0.2], ["#cfae7e", 0.38], ["#e8d4a8", 0.55], ["#d4b586", 0.72], ["#e2c99c", 0.88], ["#c9a878", 1.0]], streak = 0.5 },
 		rings = true,
-		moons = [{ name = "Titan", size = 0.20, dist = 6.9, period = 15.945, incl = 3.0, color = "#c9973f", spots = ["#a87c2e", "#ddb35e", "#8f6825"] }],
+		moons = [{ name = "Titan", size = 0.20, dist = 6.9, period = 15.945, incl = 3.0, a_au = 0.008168, mass = 6.76e-8, radius_km = 2575.0, color = "#c9973f", spots = ["#a87c2e", "#ddb35e", "#8f6825"] }],
 	}))
 
 	out.append(BodyDef.make({
@@ -116,7 +121,7 @@ static func make_planets() -> Array:
 		type = "Ice giant",
 		desc = "The most distant planet, whipped by supersonic winds of over 2,000 km/h — the fastest in the solar system.",
 		tex = { kind = "gas", stops = [["#4a6fd4", 0.0], ["#6488e4", 0.3], ["#3f60c2", 0.55], ["#6d90ea", 0.8], ["#5578d8", 1.0]], streak = 0.3 },
-		moons = [{ name = "Triton", size = 0.15, dist = 2.7, period = -5.877, incl = 23.0, color = "#b8a8a4", spots = ["#9c8d89", "#d0c2be", "#857773"] }],
+		moons = [{ name = "Triton", size = 0.15, dist = 2.7, period = -5.877, incl = 23.0, a_au = 0.002371, mass = 1.08e-8, radius_km = 1353.0, color = "#b8a8a4", spots = ["#9c8d89", "#d0c2be", "#857773"] }],
 	}))
 
 	return out

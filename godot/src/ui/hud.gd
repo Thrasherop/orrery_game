@@ -12,8 +12,12 @@ var info: InfoCard
 var dock: DockPanel
 var add_panel: AddPanel
 var save_browser: SaveBrowser
+var settings: SettingsPanel
 var toast: ToastLabel
 var hint: Label
+
+var _last_badge := ""
+var _lag_toast_shown := false
 
 # every panel lives in a slide-away edge drawer (Samsung-edge-panel style)
 var brand_drawer: EdgeDrawer
@@ -70,6 +74,8 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 		add_panel.offset_left = 220
 	add_child(add_panel)
 	rail.add_clicked.connect(add_panel.open_panel)
+	rail.add_moon_clicked.connect(func(planet: SimBody) -> void:
+		add_panel.open_panel(planet))
 
 	dock = DockPanel.new()
 	dock.setup(sim)
@@ -90,6 +96,13 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 		add_panel.close_panel()
 		save_browser.open_browser())
 	brand.reset_clicked.connect(save_browser.do_reset)
+
+	settings = SettingsPanel.new()
+	settings.setup(sim)
+	add_child(settings)
+	brand.settings_clicked.connect(func() -> void:
+		add_panel.close_panel()
+		settings.open_panel())
 
 	toast = ToastLabel.new()
 	toast.anchor_left = 0.5
@@ -132,17 +145,31 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 
 
 func _update_mode_badge() -> void:
-	if sim.physics_active:
+	var text: String
+	var gravity := sim.physics_active
+	if gravity:
 		var g_tag := (" · G×%.2f" % sim.g_scale) if absf(sim.g_scale - 1.0) > 0.005 else ""
-		brand.set_mode("N-body gravity" + g_tag, true)
+		text = "N-body gravity" + g_tag
+		# the substep budget couldn't keep up with the requested time speed —
+		# the clock is honestly lagging; say so instead of silently slowing
+		if sim.lag_ratio < 0.9:
+			text += " · limited ×%.1f" % sim.lag_ratio
+			if not _lag_toast_shown:
+				_lag_toast_shown = true
+				Events.toast_requested.emit("Moon physics limits time speed — clock running slower than requested")
 	else:
-		brand.set_mode("Kepler ephemeris", false)
+		text = "Kepler ephemeris"
+	if text != _last_badge:
+		_last_badge = text
+		brand.set_mode(text, gravity)
 
 
 func update_live() -> void:
 	brand.update_clock(sim.sim_ms)
 	info.update_live()
 	dock.update_live()
+	settings.update_live()
+	_update_mode_badge()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -168,6 +195,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_ESCAPE:
 			if save_browser.is_open():
 				save_browser.close_browser()
+			elif settings.is_open():
+				settings.close_panel()
 			elif add_panel.is_open():
 				add_panel.close_panel()
 			else:

@@ -25,9 +25,29 @@ var has_rings := false
 
 var mass_scale := 1.0       # info-card mass slider multiplier
 
+# simulated moons (is_moon). Real physics runs at a_au scale; on screen the
+# host-relative offset is amplified by disp_k so the moon renders at the
+# catalog's exaggerated distance. host is the CURRENT gravitational primary
+# (Hill-sphere binding, may change when a moon is stolen); null = free body
+# on the standard heliocentric display mapping.
+var is_moon := false
+var host: SimBody = null
+var host_prev: SimBody = null     # previous regime, kept while the display blends
+var home_host_name := ""          # original planet (texture key / snapshot / grouping)
+var a_au := 0.0                   # initial semi-major axis (circular), AU
+var incl_deg := 0.0
+var phase0 := 0.0                 # initial phase angle (matches decorative pivots)
+var orbit_sign := 1.0             # -1 = retrograde (Triton)
+var mass_solar := 0.0
+var disp_k := 1.0                 # host-relative display amplification while bound
+var catalog_disp_k := 0.0         # dist/a_au — restored when re-captured by home host
+var disp_k_prev := 1.0
+var bind_t := 1.0                 # 0→1 display blend after a host change
+
 # live per-frame outputs from the simulation
 var r_au := 0.0             # sun-relative distance
 var vel_kms := 0.0          # sun-relative speed
+var pos_au := Vector3.ZERO  # real heliocentric position (both modes)
 var display_pos := Vector3.ZERO
 var vel_display := Vector3.ZERO   # raw velocity (scene axes) — drives custom arrows
 
@@ -84,4 +104,7 @@ func trail_clear() -> void:
 func pick_radius() -> float:
 	if is_sun:
 		return size * 1.4
+	if is_moon:
+		# the usual 1.8 floor would swallow the host planet next door
+		return maxf(size * 2.2, 0.9)
 	return maxf(size * 2.2, 1.8)

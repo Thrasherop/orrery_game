@@ -71,6 +71,14 @@ func index_of(body) -> int:
 	return bodies.find(body)
 
 
+## real (uncompressed) separation of two parts, AU
+func real_distance(i: int, j: int) -> float:
+	var dx := px[i] - px[j]
+	var dy := py[i] - py[j]
+	var dz := pz[i] - pz[j]
+	return sqrt(dx * dx + dy * dy + dz * dz)
+
+
 func barycenter() -> Vector3:
 	var n := count()
 	if n == 0:

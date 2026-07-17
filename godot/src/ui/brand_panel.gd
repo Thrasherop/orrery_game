@@ -5,6 +5,7 @@ extends PanelContainer
 
 signal saves_clicked
 signal reset_clicked
+signal settings_clicked
 
 var date_label: Label
 var clock_label: Label
@@ -53,6 +54,9 @@ func _init() -> void:
 	actions.add_child(_action_chip("Reset",
 		"Restore the pristine solar system",
 		func() -> void: reset_clicked.emit()))
+	actions.add_child(_action_chip("⚙",
+		"Settings: moon simulation, display, gravity",
+		func() -> void: settings_clicked.emit()))
 
 
 func _action_chip(text: String, tip: String, action: Callable) -> Button:

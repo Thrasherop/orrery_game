@@ -64,10 +64,20 @@ func _on_preview_changed(cfg) -> void:
 
 func _apply(cfg: Dictionary) -> void:
 	var st := NBodySystem.state_vector_from_inputs(cfg)
-	var p := Units.to_display(Vector3(st.p[0], st.p[1], st.p[2]))
-	_sphere.scale = Vector3.ONE * clampf(0.9 * pow(cfg.mass_e, 1.0 / 3.0), 0.35, 3.4)
+	var host = cfg.get("host", null)
+	var p: Vector3
+	if host != null:
+		# moon placement: same linear amplification the moon will render with,
+		# so the wireframe sits exactly where the moon will appear
+		var k: float = MoonMath.add_disp_k(host.size, cfg.dist_au)
+		p = Vector3(st.p[0], st.p[1], st.p[2]) * k
+		_sphere.scale = Vector3.ONE * clampf(0.9 * pow(cfg.mass_e, 1.0 / 3.0), 0.12, 1.2)
+		_ring.scale = Vector3.ONE * (cfg.dist_au * k)
+	else:
+		p = Units.to_display(Vector3(st.p[0], st.p[1], st.p[2]))
+		_sphere.scale = Vector3.ONE * clampf(0.9 * pow(cfg.mass_e, 1.0 / 3.0), 0.35, 3.4)
+		_ring.scale = Vector3.ONE * Units.dist_scale(cfg.dist_au)
 	_sphere.position = p
-	_ring.scale = Vector3.ONE * Units.dist_scale(cfg.dist_au)
 	_arrow.position = p
 	var v := Vector3(st.v[0], st.v[1], st.v[2])
 	if v.length_squared() > 1e-14:
@@ -77,7 +87,10 @@ func _apply(cfg: Dictionary) -> void:
 	_arrow.visible = cfg.speed_kms > 0.0
 
 
-## placement inputs are sun-relative — keep the preview anchored to the sun
-func follow_sun(sun_pos: Vector3) -> void:
-	if visible:
-		position = sun_pos
+## placement inputs are relative to the sun — or to the host planet when
+## adding a moon — so the whole preview rides on that anchor
+func follow_anchor(sun_pos: Vector3) -> void:
+	if not visible:
+		return
+	var host = _cfg.get("host", null) if _cfg != null else null
+	position = host.display_pos if host != null else sun_pos

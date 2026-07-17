@@ -61,3 +61,12 @@ static func dist_to_slider(d: float) -> float:
 
 static func slider_to_dist(v: float) -> float:
 	return 0.1 * pow(400.0, v / 1000.0)
+
+
+# add-moon distance slider (log scale, 0.5 – 30 ×10⁻³ AU)
+static func moon_dist_to_slider(d: float) -> float:
+	return 1000.0 * log(clampf(d, 0.5, 30.0) / 0.5) / log(60.0)
+
+
+static func slider_to_moon_dist(v: float) -> float:
+	return 0.5 * pow(60.0, v / 1000.0)
