@@ -61,6 +61,12 @@ func _init() -> void:
 		planets.append(make_planet_from_def(def))
 	moons_simulated = Prefs.moons_default()
 	_rebuild_moons()
+	# trail reference frames: keep the focus body current and recompute the
+	# cached trail vertices whenever the viewing frame changes (the raw
+	# samples are frame-independent, so a switch never resets anything)
+	TrailFrames.focus = sun
+	Events.trail_mode_changed.connect(func(_m: int) -> void: _rebuild_trail_verts())
+	Events.selection_changed.connect(_on_selection_for_trails)
 
 
 ## build a planet SimBody with its trail configured (also used when a saved
@@ -228,13 +234,15 @@ func tick(dt: float) -> void:
 			b.pos_au = pv
 			b.display_pos = Units.to_display(pv)
 			# advance the realtime trail; rebuild wholesale after a large time jump
+			# (Kepler mode: the sun sits at the display origin, so the anchor is ZERO)
 			var span := b.trail_max * b.trail_interval
 			if days > b.trail_next_day + span or days < b.trail_next_day - span * 1.5:
 				backfill_planet_trail(b)
 			else:
 				while days >= b.trail_next_day:
 					var s := Kepler.body_position_au(b.el, SimTime.day_to_t(b.trail_next_day))
-					b.trail_push(Units.to_display(Vector3(s[0], s[1], s[2])))
+					b.trail_push(b.trail_next_day, Units.to_display(Vector3(s[0], s[1], s[2])),
+							Vector3.ZERO, _focus_abs_kepler(b.trail_next_day))
 					b.trail_next_day += b.trail_interval
 		_tick_moons_kepler(days)
 
@@ -255,13 +263,18 @@ func _tick_moons_kepler(days: float) -> void:
 		mb.r_au = mb.pos_au.length()
 		var hv := Kepler.state_vector(host.el, SimTime.day_to_t(days))
 		mb.vel_kms = Vector3(hv.v[0] + st.v[0], hv.v[1] + st.v[1], hv.v[2] + st.v[2]).length() * Units.KMS_PER_AUDAY
-		# trail: analytic samples on cadence, rebuilt after a large time jump
+		# trail: analytic samples on cadence, rebuilt after a large time jump.
+		# Anchored on the host: local = amplified host-relative offset.
 		var span := mb.trail_max * mb.trail_interval
 		if days > mb.trail_next_day + span or days < mb.trail_next_day - span * 1.5:
 			mb.trail_clear()
 			mb.trail_next_day = days
 		while days >= mb.trail_next_day:
-			mb.trail_push(_moon_kepler_display(mb, mb.trail_next_day, om))
+			var day_s := mb.trail_next_day
+			var hp := Kepler.body_position_au(host.el, SimTime.day_to_t(day_s))
+			var ms := MoonMath.rel_state(mb.a_au, mb.incl_deg, mb.phase0 + om * day_s, om)
+			mb.trail_push(day_s, Vector3(ms.p[0], ms.p[1], ms.p[2]) * mb.disp_k,
+					Units.to_display(Vector3(hp[0], hp[1], hp[2])), _focus_abs_kepler(day_s))
 			mb.trail_next_day += mb.trail_interval
 
 
@@ -315,6 +328,10 @@ func _seed_planets() -> void:
 		nb.vx[i] = s.v[0]; nb.vy[i] = s.v[1]; nb.vz[i] = s.v[2]
 	_seed_moons()
 	nb.zero_momentum()
+	# start the display frame with the sun exactly at the origin (where the
+	# Kepler ephemeris renders it) — the sun then wobbles away from there as
+	# real forces act, instead of jumping at the handoff
+	nb.frame_corr = nb.barycenter()
 	nb.refresh_display(true)
 	nb.compute_accel(g_scale)
 
@@ -391,6 +408,10 @@ func _set_host(mb: SimBody, new_host: SimBody) -> void:
 	mb.disp_k_prev = mb.disp_k
 	mb.host = new_host
 	mb.bind_t = 0.0   # display blends from the old regime over ~1.2 s
+	# trail samples are anchored on the host — a host change rebases the
+	# frame, so the old history can't be carried across
+	mb.trail_clear()
+	mb.trail_next_day = SimTime.sim_days(sim_ms)
 	if new_host != null:
 		if new_host.body_name == mb.home_host_name and mb.catalog_disp_k > 0.0:
 			mb.disp_k = mb.catalog_disp_k   # back home: original look
@@ -436,9 +457,16 @@ func _apply_moon_display(dt: float, day: float) -> void:
 			if hi >= 0:
 				mb.vel_display = Vector3(nb.vx[mi] - nb.vx[hi], nb.vy[mi] - nb.vy[hi], nb.vz[mi] - nb.vz[hi])
 		# trails advance here (once per frame), not per substep — a bound
-		# moon's path only exists in this amplified display space
+		# moon's path only exists in this amplified display space. Anchored
+		# on the host (the sun while free-flying).
 		if day >= mb.trail_next_day:
-			mb.trail_push(mb.display_pos)
+			var anchor := sun.display_pos
+			if mb.host != null:
+				anchor = mb.host.display_pos
+			var fa := Vector3.ZERO
+			if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
+				fa = TrailFrames.focus.display_pos
+			mb.trail_push(day, mb.display_pos - anchor, anchor, fa)
 			mb.trail_next_day = day + mb.trail_interval
 
 
@@ -505,6 +533,12 @@ func _step_physics(dt_days: float, end_day: float) -> void:
 		# has swung > 4° since the last sample — sharp encounters stay smooth.
 		# (Moons are skipped: their display space is amplified per-host, so
 		# their trails advance once per frame in _apply_moon_display.)
+		# Samples are sun-anchored: local = heliocentric display offset,
+		# anchor = the sun's absolute display position this substep.
+		var focus_abs := Vector3.ZERO
+		if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
+			var fi := nb.index_of(TrailFrames.focus)
+			focus_abs = nb.disp[fi] if fi >= 0 else TrailFrames.focus.display_pos
 		for i in nb.count():
 			var b: SimBody = nb.bodies[i]
 			if b.is_moon:
@@ -515,7 +549,7 @@ func _step_physics(dt_days: float, end_day: float) -> void:
 				if vm > 1e-12 and (nb.vx[i] * b.trail_lv.x + nb.vy[i] * b.trail_lv.y + nb.vz[i] * b.trail_lv.z) / vm < COS_TRAIL:
 					need = true
 			if need:
-				b.trail_push(nb.disp[i])
+				b.trail_push(day, nb.disp[i] - nb.disp[0], nb.disp[0], focus_abs)
 				var vm2 := sqrt(nb.vx[i] * nb.vx[i] + nb.vy[i] * nb.vy[i] + nb.vz[i] * nb.vz[i])
 				if vm2 == 0.0:
 					vm2 = 1.0
@@ -764,11 +798,52 @@ func _trail_interval(b: SimBody, r_au: float) -> float:
 	return maxf(365.25 * pow(maxf(r_au, 0.05), 1.5) / (512.0 * sqrt(g_scale)), 0.02)
 
 
-## rebuild a planet's full trail analytically (Kepler mode, or right after re-seeding)
+## rebuild a planet's full trail analytically (Kepler mode, or right after
+## re-seeding — in both cases the sun sits at the display origin, so the
+## anchor is ZERO throughout)
 func backfill_planet_trail(b: SimBody) -> void:
 	b.trail_clear()
 	var day := SimTime.sim_days(sim_ms)
 	for k in range(b.trail_max - 1, -1, -1):
-		var s := Kepler.body_position_au(b.el, SimTime.day_to_t(day - k * b.trail_interval))
-		b.trail_push(Units.to_display(Vector3(s[0], s[1], s[2])))
+		var day_s := day - k * b.trail_interval
+		var s := Kepler.body_position_au(b.el, SimTime.day_to_t(day_s))
+		b.trail_push(day_s, Units.to_display(Vector3(s[0], s[1], s[2])),
+				Vector3.ZERO, _focus_abs_kepler(day_s))
 	b.trail_next_day = day + b.trail_interval
+
+
+## The focus body's absolute display position at an arbitrary sim-day,
+## computed from the ephemeris — used by Kepler-mode pushes and backfills
+## (physics-mode pushes read the live integrator state instead). Returns
+## ZERO unless the FOCUS frame is active, so non-focus modes pay nothing.
+func _focus_abs_kepler(day: float) -> Vector3:
+	if TrailFrames.mode != TrailFrames.MODE_FOCUS:
+		return Vector3.ZERO
+	var f := TrailFrames.focus
+	if f == null or f.is_sun:
+		return Vector3.ZERO
+	if f.is_moon:
+		if f.host != null and not f.custom:
+			return _moon_kepler_display(f, day, _moon_omega(f, Catalog.PLANET_MASS[f.host.body_name]))
+		return f.display_pos
+	if f.custom:
+		return f.display_pos   # no ephemeris — best effort
+	var s := Kepler.body_position_au(f.el, SimTime.day_to_t(day))
+	return Units.to_display(Vector3(s[0], s[1], s[2]))
+
+
+## selection drives the FOCUS frame's reference body (falls back to the sun)
+func _on_selection_for_trails(body) -> void:
+	var f: SimBody = body if body != null else sun
+	if TrailFrames.focus == f:
+		return
+	TrailFrames.focus = f
+	if TrailFrames.mode == TrailFrames.MODE_FOCUS:
+		_rebuild_trail_verts()
+
+
+## frame mode or focus changed: recompute every cached vertex from the
+## frame-independent samples — nothing is cleared, switching is lossless
+func _rebuild_trail_verts() -> void:
+	for b in all_bodies():
+		b.trail_rebuild()

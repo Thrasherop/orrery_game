@@ -130,7 +130,13 @@ func update_world(dt: float, days: float, cam: Camera3D) -> void:
 	for b in body_views:
 		body_views[b].update_view(days, cam)
 	for b in trail_views:
-		trail_views[b].refresh()
+		var tv: TrailView = trail_views[b]
+		# trails are meshed in frame-local space; park the view at the active
+		# frame's anchor so they ride along with it (sun/host wobble, galaxy
+		# drift, focus body) instead of getting orphaned in absolute space
+		tv.position = TrailFrames.anchor_now(b, sim.sun, days)
+		tv.visible = Events.show_orbits and TrailFrames.trail_visible(b)
+		tv.refresh()
 	for b in arrows:
 		var arrow: VelocityArrow = arrows[b]
 		arrow.position = b.display_pos

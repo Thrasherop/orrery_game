@@ -13,6 +13,14 @@ static func set_moons_default(on: bool) -> void:
 	_write("moons", "default_on", on)
 
 
+static func trail_mode() -> int:
+	return clampi(int(_read("display", "trail_mode", TrailFrames.MODE_LOCAL)), 0, TrailFrames.MODE_NAMES.size() - 1)
+
+
+static func set_trail_mode(m: int) -> void:
+	_write("display", "trail_mode", m)
+
+
 static func _read(section: String, key: String, fallback):
 	var cf := ConfigFile.new()
 	if cf.load(PATH) != OK:

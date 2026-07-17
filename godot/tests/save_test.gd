@@ -90,7 +90,7 @@ func _test_snapshot() -> void:
 	_check(not sim.physics_active and not sim.physics_permanent, "reset returns to Kepler mode")
 	_check(sim.planets.size() == 8 and sim.customs.is_empty(), "reset restores pristine body set")
 	_check(sim.g_scale == 1.0 and sim.custom_count == 0, "reset restores defaults")
-	_check(_planet(sim, "Earth").trail_points.size() > 0, "planet trails backfilled after reset")
+	_check(_planet(sim, "Earth").trail_size() > 0, "planet trails backfilled after reset")
 
 	var ksnap := Snapshot.capture(sim, rig)
 	var kms := sim.sim_ms

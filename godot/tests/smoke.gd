@@ -33,8 +33,27 @@ func _ready() -> void:
 	_check(absf(earth.r_au - 1.0) < 0.02, "Earth at ~1 AU (got %.4f)" % earth.r_au)
 	_check(earth.vel_kms > 28.0 and earth.vel_kms < 31.0, "Earth at ~29.8 km/s (got %.2f)" % earth.vel_kms)
 	_check(mercury.r_au > 0.3 and mercury.r_au < 0.47, "Mercury within its orbit range (got %.4f)" % mercury.r_au)
-	_check(earth.trail_points.size() == earth.trail_max, "Earth trail backfilled (%d pts)" % earth.trail_points.size())
+	_check(earth.trail_size() == earth.trail_max, "Earth trail backfilled (%d pts)" % earth.trail_size())
 	_check(not sim.physics_active, "starts in Kepler ephemeris mode")
+
+	# --- trail reference frames --------------------------------------------
+	# switching modes must be lossless (same sample count, verts rebuilt) and
+	# every mode's newest vertex must land the trail exactly on the body:
+	# vertex + anchor_now == display_pos
+	var days := SimTime.sim_days(sim.sim_ms)
+	Events.selected = earth
+	Events.selection_changed.emit(earth)   # focus follows selection
+	for mode in TrailFrames.MODE_NAMES.size():
+		Events.set_trail_mode(mode)
+		var n := mercury.trail_size()
+		_check(n == mercury.trail_verts.size(),
+			"mode %d: verts in lockstep with samples" % mode)
+		var tip: Vector3 = mercury.trail_verts[n - 1] + TrailFrames.anchor_now(mercury, sim.sun, days)
+		_check(tip.distance_to(mercury.display_pos) < 0.5,
+			"mode %d: trail ends on the body (off by %.4f)" % [mode, tip.distance_to(mercury.display_pos)])
+	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
+	Events.selected = null
+	Events.selection_changed.emit(null)
 
 	# --- N-body mode ------------------------------------------------------
 	var body := sim.add_custom_body({
@@ -51,7 +70,7 @@ func _ready() -> void:
 		sim.tick(1.0 / 60.0)
 	_check(absf(earth.r_au - r0) < 0.05,
 		"Earth orbit stable after 1 simulated year of N-body (Δr = %.5f AU)" % absf(earth.r_au - r0))
-	_check(body.trail_points.size() > 10, "custom body leaves a trail (%d pts)" % body.trail_points.size())
+	_check(body.trail_size() > 10, "custom body leaves a trail (%d pts)" % body.trail_size())
 
 	# removing the custom body should snap back to the ephemeris
 	sim.remove_custom_body(body)

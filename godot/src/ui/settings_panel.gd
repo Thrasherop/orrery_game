@@ -4,6 +4,13 @@ extends CanvasLayer
 ## the display toggles and the G slider (moved here from the time dock — speed
 ## stays in the dock). Code-built like every other panel.
 
+const MODE_TIPS := [
+	"Paths relative to the Sun (moons: their planet) — clean orbit rings.",
+	"Inertial space: the Sun wobbles and whole orbits drift around the barycenter.",
+	"The Solar System never stands still — orbits stretch into helices as it drifts through the Milky Way.",
+	"Paths relative to the selected body — watch other planets trace retrograde loops.",
+]
+
 var sim: Simulation
 
 var _moons_check: CheckButton
@@ -13,6 +20,8 @@ var _lock_note: Label
 var _orbits_btn: Button
 var _labels_btn: Button
 var _vectors_btn: Button
+var _mode_btns: Array = []   # Button per TrailFrames mode
+var _mode_desc: Label
 var _g_slider: HSlider
 var _g_label: Label
 var _last_g := 1.0
@@ -98,6 +107,21 @@ func setup(sim_: Simulation) -> void:
 		func() -> void: Events.set_show_vectors(not Events.show_vectors))
 	toggles.add_child(_vectors_btn)
 
+	# --- Path frame ---------------------------------------------------------
+	box.add_child(_spacer())
+	box.add_child(UITheme.make_key_label("Path frame"))
+	var modes := HBoxContainer.new()
+	modes.add_theme_constant_override("separation", 6)
+	box.add_child(modes)
+	for m in TrailFrames.MODE_NAMES.size():
+		var btn := _toggle_btn(TrailFrames.MODE_NAMES[m], MODE_TIPS[m],
+			func() -> void: Events.set_trail_mode(m))
+		modes.add_child(btn)
+		_mode_btns.append(btn)
+	_mode_desc = UITheme.make_label("", 10, UITheme.MUTED)
+	_mode_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_mode_desc)
+
 	# --- Physics ----------------------------------------------------------
 	box.add_child(_spacer())
 	box.add_child(UITheme.make_key_label("Physics"))
@@ -125,6 +149,7 @@ func setup(sim_: Simulation) -> void:
 	Events.orbits_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.labels_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.vectors_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
+	Events.trail_mode_changed.connect(func(_m: int) -> void: _refresh_toggles())
 	Events.mode_changed.connect(_refresh)
 	_refresh()
 
@@ -199,6 +224,9 @@ func _refresh_toggles() -> void:
 	UITheme.set_chip_active(_orbits_btn, Events.show_orbits)
 	UITheme.set_chip_active(_labels_btn, Events.show_labels)
 	UITheme.set_chip_active(_vectors_btn, Events.show_vectors)
+	for m in _mode_btns.size():
+		UITheme.set_chip_active(_mode_btns[m], TrailFrames.mode == m)
+	_mode_desc.text = MODE_TIPS[TrailFrames.mode]
 
 
 ## external G change while the panel is open (loading a save, reset)

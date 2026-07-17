@@ -24,10 +24,15 @@ signal toast_requested(msg)
 signal orbits_toggled(on)
 signal labels_toggled(on)
 signal vectors_toggled(on)
+signal trail_mode_changed(mode)    # authoritative state lives in TrailFrames.mode
 
 var show_orbits := true
 var show_labels := true
 var show_vectors := true
+
+
+func _ready() -> void:
+	TrailFrames.mode = Prefs.trail_mode()
 
 # add-body panel live preview --------------------------------------------
 signal add_preview_changed(cfg)    # Dictionary of inputs, or null to hide
@@ -46,3 +51,11 @@ func set_show_labels(on: bool) -> void:
 func set_show_vectors(on: bool) -> void:
 	show_vectors = on
 	vectors_toggled.emit(on)
+
+
+func set_trail_mode(m: int) -> void:
+	if TrailFrames.mode == m:
+		return
+	TrailFrames.mode = m
+	Prefs.set_trail_mode(m)
+	trail_mode_changed.emit(m)

@@ -192,6 +192,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			Events.set_show_labels(not Events.show_labels)
 		KEY_V:
 			Events.set_show_vectors(not Events.show_vectors)
+		KEY_P:
+			var next := (TrailFrames.mode + 1) % TrailFrames.MODE_NAMES.size()
+			Events.set_trail_mode(next)
+			Events.toast_requested.emit("Path frame: %s" % TrailFrames.MODE_NAMES[next])
 		KEY_ESCAPE:
 			if save_browser.is_open():
 				save_browser.close_browser()

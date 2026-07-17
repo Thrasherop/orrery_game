@@ -51,8 +51,15 @@ var pos_au := Vector3.ZERO  # real heliocentric position (both modes)
 var display_pos := Vector3.ZERO
 var vel_display := Vector3.ZERO   # raw velocity (scene axes) — drives custom arrows
 
-# realtime orbit trail — ring buffer of display-space points
-var trail_points := PackedVector3Array()
+# realtime orbit trail — ring buffer of frame-independent samples (see
+# TrailFrames): sim-day, display offset from the anchor body at sample time,
+# and the anchor's absolute display position at sample time. trail_verts is
+# the cached mesh geometry for the ACTIVE frame mode, appended in lockstep
+# and rebuilt wholesale by trail_rebuild() when the mode/focus changes.
+var trail_days := PackedFloat64Array()
+var trail_local := PackedVector3Array()
+var trail_anchor := PackedVector3Array()
+var trail_verts := PackedVector3Array()
 var trail_max := 0
 var trail_next_day := -INF
 var trail_interval := 1.0
@@ -86,15 +93,39 @@ func init_trail(max_pts: int, opacity: float) -> void:
 	trail_clear()
 
 
-func trail_push(pos: Vector3) -> void:
-	if trail_points.size() >= trail_max:
-		trail_points.remove_at(0)
-	trail_points.append(pos)
+## append one sample. `focus_abs` is only meaningful in MODE_FOCUS (the focus
+## body's absolute display position at `day`) — pass ZERO otherwise.
+func trail_push(day: float, local: Vector3, anchor: Vector3, focus_abs := Vector3.ZERO) -> void:
+	if trail_days.size() >= trail_max:
+		trail_days.remove_at(0)
+		trail_local.remove_at(0)
+		trail_anchor.remove_at(0)
+		trail_verts.remove_at(0)
+	trail_days.append(day)
+	trail_local.append(local)
+	trail_anchor.append(anchor)
+	trail_verts.append(TrailFrames.vertex(day, local, anchor, focus_abs))
+	trail_version += 1
+
+
+func trail_size() -> int:
+	return trail_days.size()
+
+
+## recompute the cached vertices for the current TrailFrames mode/focus —
+## the raw samples are frame-independent, so nothing is lost on a switch
+func trail_rebuild() -> void:
+	var n := trail_days.size()
+	for i in n:
+		trail_verts[i] = TrailFrames.vertex_hist(trail_days[i], trail_local[i], trail_anchor[i])
 	trail_version += 1
 
 
 func trail_clear() -> void:
-	trail_points.clear()
+	trail_days.clear()
+	trail_local.clear()
+	trail_anchor.clear()
+	trail_verts.clear()
 	trail_next_day = -INF
 	trail_lv_ok = false
 	trail_version += 1

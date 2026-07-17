@@ -6,6 +6,11 @@ elements), live N-body gravity with adaptive leapfrog integration, collisions
 and mergers, custom body injection, mass/G editing, realtime orbit trails,
 procedural planet textures, moons, Saturn's rings, and the milky-way starfield.
 
+Orbit trails support four reference frames (`src/core/trail_frames.gd`),
+switchable live with no reset — Local (sun/host-relative rings), True motion
+(inertial barycentric), Galaxy (the system drifting through the Milky Way)
+and Focus (relative to the selected body — retrograde loops).
+
 ## Running
 
 Open this folder (`godot/`) in Godot 4.4+ and press Play, or:
@@ -18,7 +23,7 @@ godot --path godot
 
 - Drag to orbit, scroll to zoom, right/middle-drag to pan
 - Click a planet (or its label / rail entry) to select and follow it
-- `Space` pause · `O` orbits · `L` labels · `V` velocity vectors · `Esc` deselect / close panel
+- `Space` pause · `O` orbits · `L` labels · `V` velocity vectors · `P` cycle path frame · `Esc` deselect / close panel
 - "Add body…" in the left rail injects a custom body and switches the whole
   system to live N-body gravity
 
