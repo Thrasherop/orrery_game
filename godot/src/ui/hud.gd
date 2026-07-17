@@ -10,6 +10,7 @@ var brand: BrandPanel
 var rail: RailPanel
 var info: InfoCard
 var dock: DockPanel
+var perf: PerfPanel
 var add_panel: AddPanel
 var save_browser: SaveBrowser
 var settings: SettingsPanel
@@ -24,6 +25,7 @@ var brand_drawer: EdgeDrawer
 var rail_drawer: EdgeDrawer
 var info_drawer: EdgeDrawer
 var dock_drawer: EdgeDrawer
+var perf_drawer: EdgeDrawer
 
 
 func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
@@ -92,6 +94,19 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 	dock_drawer.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	dock_drawer.offset_bottom = -10 if UITheme.touch else -22
 	add_child(dock_drawer)
+
+	# physics-load drawer, bottom-left, tucked away by default — pull it out
+	# to see which bodies are slowing the integrator down
+	perf = PerfPanel.new()
+	perf.setup(sim)
+	perf_drawer = EdgeDrawer.new(EdgeDrawer.Edge.LEFT, perf, "Physics load: what's slowing the simulation")
+	perf_drawer.anchor_top = 1.0
+	perf_drawer.anchor_bottom = 1.0
+	perf_drawer.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	perf_drawer.offset_left = 20
+	perf_drawer.offset_bottom = -84 if UITheme.touch else -22
+	add_child(perf_drawer)
+	perf_drawer.set_open(false, false)
 
 	save_browser = SaveBrowser.new()
 	save_browser.setup(sim, rig)

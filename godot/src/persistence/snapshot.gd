@@ -17,8 +17,11 @@ class_name Snapshot
 ## derived fields (recomputed by one tick(0.0)).
 ##
 ## v1 saves (pre-moon-update) load with moons_simulated = false.
+## v3 adds per-body `simulated` + `rail` state: a railed (unsimulated) body
+## carries its frozen circular orbit instead of a `phys` row, and may exist
+## even in Kepler-mode saves.
 
-const VERSION := 2
+const VERSION := 3
 
 
 static func capture(sim: Simulation, rig: CameraRig) -> Dictionary:
@@ -54,36 +57,42 @@ static func capture(sim: Simulation, rig: CameraRig) -> Dictionary:
 		if sim.physics_active:
 			e.phys = _phys_of(sim.nb, b)
 		d.planets.append(e)
-	# moons carry live state only in physics mode; Kepler-mode moons are
-	# analytic and regenerate from the catalog on apply
-	if sim.physics_active:
-		for b: SimBody in sim.moons:
-			var e := {
-				name = b.body_name,
-				home = b.home_host_name,
-				custom = b.custom,
-				size = b.size,
-				mass_scale = b.mass_scale,
-				a_au = b.a_au,
-				incl = b.incl_deg,
-				phase0 = b.phase0,
-				orbit_sign = b.orbit_sign,
-				mass_solar = b.mass_solar,
-				disp_k = b.disp_k,
-				catalog_disp_k = b.catalog_disp_k,
-				host = (b.host.body_name if b.host != null else ""),
-				phys = _phys_of(sim.nb, b),
-			}
-			if b.custom:
-				e.color = b.color.to_html(false)
-				e.mass_e = b.mass_e
-				e.body_type = b.body_type
-				e.desc = b.desc
-				e.period_days = b.period_days
-				e.palette_index = int(b.tex.get("palette_index", 0))
-			d.moons.append(e)
+	# moons carry live state in physics mode; in Kepler mode the simulated
+	# ones are analytic (regenerated from the catalog on apply) and only
+	# railed ones need persisting
+	for b: SimBody in sim.moons:
+		if not sim.physics_active and b.simulated:
+			continue
+		var e := {
+			name = b.body_name,
+			home = b.home_host_name,
+			custom = b.custom,
+			size = b.size,
+			mass_scale = b.mass_scale,
+			a_au = b.a_au,
+			incl = b.incl_deg,
+			phase0 = b.phase0,
+			orbit_sign = b.orbit_sign,
+			mass_solar = b.mass_solar,
+			disp_k = b.disp_k,
+			catalog_disp_k = b.catalog_disp_k,
+			host = (b.host.body_name if b.host != null else ""),
+			simulated = b.simulated,
+		}
+		if b.simulated:
+			e.phys = _phys_of(sim.nb, b)
+		else:
+			e.rail = _rail_of(b)
+		if b.custom:
+			e.color = b.color.to_html(false)
+			e.mass_e = b.mass_e
+			e.body_type = b.body_type
+			e.desc = b.desc
+			e.period_days = b.period_days
+			e.palette_index = int(b.tex.get("palette_index", 0))
+		d.moons.append(e)
 	for b: SimBody in sim.customs:
-		d.customs.append({
+		var e := {
 			name = b.body_name,
 			color = b.color.to_html(false),
 			is_star = b.is_star,
@@ -93,8 +102,13 @@ static func capture(sim: Simulation, rig: CameraRig) -> Dictionary:
 			body_type = b.body_type,
 			desc = b.desc,
 			palette_index = int(b.tex.get("palette_index", 0)),
-			phys = _phys_of(sim.nb, b),
-		})
+			simulated = b.simulated,
+		}
+		if b.simulated:
+			e.phys = _phys_of(sim.nb, b)
+		else:
+			e.rail = _rail_of(b)
+		d.customs.append(e)
 	return d
 
 
@@ -154,43 +168,44 @@ static func apply(sim: Simulation, rig: CameraRig, d: Dictionary) -> bool:
 	sim.moons.clear()
 	sim.moons_simulated = bool(s.get("moons_simulated", false))
 	sim.sim_expensive_moons = bool(s.get("sim_expensive_moons", true))
+	# moon rows exist in Kepler-mode saves too (railed bodies)
 	var moon_rows: Array = []
-	if bool(s.physics_active):
-		for e in d.get("moons", []):
-			var b: SimBody
-			if bool(e.get("custom", false)):
-				b = SimBody.new()
-				b.body_name = str(e.get("name", "Moon"))
-				b.color = Color(str(e.get("color", "8fd0a0")))
-				b.custom = true
-				b.is_moon = true
-				b.mass_e = float(e.get("mass_e", 0.01))
-				b.body_type = str(e.get("body_type", "Custom moon"))
-				b.desc = str(e.get("desc", ""))
-				b.tex = { kind = "custom", palette_index = int(e.get("palette_index", 0)) }
-				b.period_days = float(e.get("period_days", 27.0))
-				b.day_hours = 24.0
-				b.init_trail(Simulation.MOON_TRAIL_MAX, 0.5)
-				b.trail_interval = maxf(b.period_days, 0.1) / 128.0
-			else:
-				var md := _find_moon_dict(defs, str(e.get("home", "")), str(e.get("name", "")))
-				if md.is_empty():
-					continue   # unknown moon name — skip rather than fail the load
-				b = sim.make_moon_from_dict(str(e.get("home", "")), md, 0)
-			b.home_host_name = str(e.get("home", ""))
-			b.size = float(e.get("size", b.size))
-			b.mass_scale = float(e.get("mass_scale", 1.0))
-			b.a_au = float(e.get("a_au", b.a_au))
-			b.incl_deg = float(e.get("incl", b.incl_deg))
-			b.phase0 = float(e.get("phase0", b.phase0))
-			b.orbit_sign = float(e.get("orbit_sign", b.orbit_sign))
-			b.mass_solar = float(e.get("mass_solar", b.mass_solar))
-			b.disp_k = float(e.get("disp_k", b.disp_k))
-			b.catalog_disp_k = float(e.get("catalog_disp_k", b.catalog_disp_k))
-			b.bind_t = 1.0
-			sim.moons.append(b)
-			moon_rows.append([b, e])
-			Events.body_added.emit(b)
+	for e in d.get("moons", []):
+		var b: SimBody
+		if bool(e.get("custom", false)):
+			b = SimBody.new()
+			b.body_name = str(e.get("name", "Moon"))
+			b.color = Color(str(e.get("color", "8fd0a0")))
+			b.custom = true
+			b.is_moon = true
+			b.mass_e = float(e.get("mass_e", 0.01))
+			b.body_type = str(e.get("body_type", "Custom moon"))
+			b.desc = str(e.get("desc", ""))
+			b.tex = { kind = "custom", palette_index = int(e.get("palette_index", 0)) }
+			b.period_days = float(e.get("period_days", 27.0))
+			b.day_hours = 24.0
+			b.init_trail(Simulation.MOON_TRAIL_MAX, 0.5)
+			b.trail_interval = maxf(b.period_days, 0.1) / 128.0
+		else:
+			var md := _find_moon_dict(defs, str(e.get("home", "")), str(e.get("name", "")))
+			if md.is_empty():
+				continue   # unknown moon name — skip rather than fail the load
+			b = sim.make_moon_from_dict(str(e.get("home", "")), md, 0)
+		b.home_host_name = str(e.get("home", ""))
+		b.size = float(e.get("size", b.size))
+		b.mass_scale = float(e.get("mass_scale", 1.0))
+		b.a_au = float(e.get("a_au", b.a_au))
+		b.incl_deg = float(e.get("incl", b.incl_deg))
+		b.phase0 = float(e.get("phase0", b.phase0))
+		b.orbit_sign = float(e.get("orbit_sign", b.orbit_sign))
+		b.mass_solar = float(e.get("mass_solar", b.mass_solar))
+		b.disp_k = float(e.get("disp_k", b.disp_k))
+		b.catalog_disp_k = float(e.get("catalog_disp_k", b.catalog_disp_k))
+		b.bind_t = 1.0
+		_apply_rail(b, e)
+		sim.moons.append(b)
+		moon_rows.append([b, e])
+		Events.body_added.emit(b)
 
 	# customs: replace wholesale (their textures are the boot-time palette set)
 	for b: SimBody in sim.customs:
@@ -210,6 +225,7 @@ static func apply(sim: Simulation, rig: CameraRig, d: Dictionary) -> bool:
 		b.desc = str(e.get("desc", ""))
 		b.tex = { kind = "custom", palette_index = int(e.get("palette_index", 0)) }
 		b.init_trail(Simulation.TRAIL_MAX, 0.5)
+		_apply_rail(b, e)
 		sim.customs.append(b)
 		custom_rows.append([b, e])
 		Events.body_added.emit(b)
@@ -239,6 +255,8 @@ static func apply(sim: Simulation, rig: CameraRig, d: Dictionary) -> bool:
 		rows.append_array(moon_rows)
 		rows.append_array(custom_rows)
 		for row in rows:
+			if not (row[0] as SimBody).simulated:
+				continue   # railed bodies live outside the integrator
 			var i := nb.add_body(row[0], 1.0)
 			var ph: Dictionary = row[1].phys
 			nb.px[i] = ph.p[0]; nb.py[i] = ph.p[1]; nb.pz[i] = ph.p[2]
@@ -326,17 +344,26 @@ static func validate(d) -> bool:
 			if not _has_phys(e):
 				return false
 		for e in d.get("moons", []):
-			if not _has_phys(e):
+			if not (_row_simulated(e) and _has_phys(e) or not _row_simulated(e) and _has_rail(e)):
 				return false
 		for e in d.customs:
-			if not _has_phys(e):
+			if not (_row_simulated(e) and _has_phys(e) or not _row_simulated(e) and _has_rail(e)):
 				return false
 	else:
-		if not (d.customs as Array).is_empty():
-			return false   # custom bodies only exist in physics mode
-		if not (d.get("moons", []) as Array).is_empty():
-			return false   # Kepler-mode moons are analytic — never persisted
+		# Kepler mode integrates nothing: only railed (unsimulated) bodies
+		# may be persisted — simulated moons are analytic, simulated customs
+		# would imply physics
+		for e in d.customs:
+			if _row_simulated(e) or not _has_rail(e):
+				return false
+		for e in d.get("moons", []):
+			if _row_simulated(e) or not _has_rail(e):
+				return false
 	return true
+
+
+static func _row_simulated(e) -> bool:
+	return bool((e as Dictionary).get("simulated", true)) if typeof(e) == TYPE_DICTIONARY else true
 
 
 ## catalog moon dict by (home planet, moon name); {} when unknown
@@ -356,6 +383,40 @@ static func _has_phys(e) -> bool:
 	return typeof(ph.get("p")) == TYPE_ARRAY and (ph.p as Array).size() == 3 \
 		and typeof(ph.get("v")) == TYPE_ARRAY and (ph.v as Array).size() == 3 \
 		and ph.has("m") and ph.has("base_m")
+
+
+static func _has_rail(e) -> bool:
+	if typeof(e) != TYPE_DICTIONARY or typeof(e.get("rail")) != TYPE_DICTIONARY:
+		return false
+	var r: Dictionary = e.rail
+	return typeof(r.get("u")) == TYPE_ARRAY and (r.u as Array).size() == 3 \
+		and typeof(r.get("w")) == TYPE_ARRAY and (r.w as Array).size() == 3 \
+		and r.has("a") and r.has("omega") and r.has("day0")
+
+
+static func _rail_of(b: SimBody) -> Dictionary:
+	return {
+		u = _v3(b.rail_u),
+		w = _v3(b.rail_w),
+		a = b.rail_a,
+		omega = b.rail_omega,
+		day0 = b.rail_day0,
+	}
+
+
+## restore the per-body simulation toggle + rail state from a v3 row
+## (older rows have neither key — everything loads as simulated)
+static func _apply_rail(b: SimBody, e: Dictionary) -> void:
+	b.simulated = bool(e.get("simulated", true))
+	if b.simulated:
+		return
+	var r: Dictionary = e.get("rail", {})
+	b.rail_u = _to_v3(r.get("u", [1.0, 0.0, 0.0]))
+	b.rail_w = _to_v3(r.get("w", [0.0, 0.0, -1.0]))
+	b.rail_a = float(r.get("a", 1.0))
+	b.rail_omega = float(r.get("omega", 0.0))
+	b.rail_day0 = float(r.get("day0", 0.0))
+	b.trail_interval = (TAU / maxf(b.rail_omega, 1e-9)) / 128.0
 
 
 static func _phys_of(nb: NBodySystem, body: SimBody) -> Dictionary:

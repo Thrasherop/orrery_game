@@ -122,12 +122,13 @@ func rebuild() -> void:
 				_box.add_child(_hint_row("Enable “Simulate moons” in Settings"))
 			elif deco.size() > 0:
 				_box.add_child(_hint_row("Fast moons disabled in Settings"))
-			if sim.moons_simulated:
-				var addm := _make_item("Add moon…", UITheme.ACCENT, 24)
-				var add_lbl_m: Label = addm.get_meta("name_label")
-				add_lbl_m.add_theme_color_override("font_color", UITheme.ACCENT)
-				addm.pressed.connect(func() -> void: add_moon_clicked.emit(body))
-				_box.add_child(addm)
+			# user-added moons are always simulated — independent of the
+			# catalog-moon flags above
+			var addm := _make_item("Add moon…", UITheme.ACCENT, 24)
+			var add_lbl_m: Label = addm.get_meta("name_label")
+			add_lbl_m.add_theme_color_override("font_color", UITheme.ACCENT)
+			addm.pressed.connect(func() -> void: add_moon_clicked.emit(body))
+			_box.add_child(addm)
 
 	var add_btn := _make_item("Add body…", UITheme.ACCENT)
 	var add_lbl: Label = add_btn.get_meta("name_label")

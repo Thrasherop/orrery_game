@@ -133,6 +133,29 @@ func compute_accel(g_scale: float) -> void:
 	tau_min = sqrt(tau2min)
 
 
+## Per-body dynamical timescale for the physics-load panel: for every part,
+## the tau of its tightest pair — attributed to the LIGHTER member (putting
+## that one on rails is what would relax the step). Same formula the adaptive
+## substep uses; INF for bodies that don't constrain it.
+func per_body_tau(g_scale: float) -> PackedFloat64Array:
+	var n := count()
+	var out := PackedFloat64Array()
+	out.resize(n)
+	out.fill(INF)
+	var G := Units.GM_SUN * g_scale
+	for i in range(n):
+		for j in range(i + 1, n):
+			var dx := px[j] - px[i]
+			var dy := py[j] - py[i]
+			var dz := pz[j] - pz[i]
+			var r2 := dx * dx + dy * dy + dz * dz + EPS2
+			var t := sqrt(r2 * sqrt(r2) / (G * (m[i] + m[j])))
+			var k := j if m[j] <= m[i] else i
+			if t < out[k]:
+				out[k] = t
+	return out
+
+
 ## One kick-drift-kick substep of h days.
 func leapfrog_substep(h: float, g_scale: float) -> void:
 	var n := count()

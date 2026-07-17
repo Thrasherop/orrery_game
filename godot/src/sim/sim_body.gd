@@ -25,6 +25,17 @@ var has_rings := false
 
 var mass_scale := 1.0       # info-card mass slider multiplier
 
+# Per-body simulation toggle (info-card checkbox; moons and customs only).
+# false = "on rails": the body glides on a circular orbit frozen from its
+# state at disable time — it exerts no gravity, feels none, can't collide,
+# and costs the integrator nothing. New bodies are always simulated.
+var simulated := true
+var rail_u := Vector3.ZERO  # unit radial direction at the freeze moment
+var rail_w := Vector3.ZERO  # unit tangential (motion) direction at freeze
+var rail_a := 0.0           # circle radius, AU (anchor-relative)
+var rail_omega := 0.0       # angular rate, rad/day
+var rail_day0 := 0.0        # sim-day of the freeze (phase zero)
+
 # simulated moons (is_moon). Real physics runs at a_au scale; on screen the
 # host-relative offset is amplified by disp_k so the moon renders at the
 # catalog's exaggerated distance. host is the CURRENT gravitational primary

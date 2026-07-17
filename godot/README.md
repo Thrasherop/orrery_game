@@ -28,7 +28,12 @@ godot --path godot
 - "Add body…" in the left rail injects a custom body around the currently
   selected body (a moon of it; sun or nothing selected → a free sun-orbiting
   body) and switches the whole system to live N-body gravity — the camera
-  frames the proposed position while the form is open
+  frames the proposed position while the form is open. User-added bodies are
+  always simulated, independent of the catalog-moon settings
+- Every moon/custom body's info card has a "Simulated" switch: off puts the
+  body "on rails" (a frozen circular orbit — no gravity, no collisions, no
+  physics cost); the bottom-left "Physics load" drawer names the bodies
+  forcing the integrator's smallest steps
 
 ## Architecture
 

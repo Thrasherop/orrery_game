@@ -123,23 +123,38 @@ func set_expensive_moons(on: bool) -> void:
 	Events.moons_mode_changed.emit()
 
 
-## (re)create moon SimBodies from the catalog to match the current flags.
-## Only reachable in Kepler mode, so no nb bookkeeping and no custom moons.
+## (re)create CATALOG moon SimBodies to match the current flags. Only
+## reachable in Kepler mode (no nb bookkeeping). User-added moons and railed
+## bodies aren't the catalog's to rebuild — they're kept as-is.
 func _rebuild_moons() -> void:
-	for mb in moons:
-		Events.body_removed.emit(mb)
-	moons.clear()
+	var kept: Array = []
+	for mb: SimBody in moons:
+		if mb.custom or not mb.simulated:
+			kept.append(mb)
+		else:
+			Events.body_removed.emit(mb)
+	moons = kept
 	if moons_simulated:
 		for planet in planets:
 			for idx in planet.moons.size():
 				var md: Dictionary = planet.moons[idx]
 				if not sim_expensive_moons and md.name in Catalog.EXPENSIVE_MOONS:
 					continue
+				if _live_catalog_moon(planet.body_name, md.name) != null:
+					continue   # survived as a railed body — don't duplicate
 				var mb := make_moon_from_dict(planet.body_name, md, idx)
 				mb.host = planet
 				moons.append(mb)
 				Events.body_added.emit(mb)
 	Events.bodies_changed.emit()
+
+
+## the live SimBody for a catalog moon, if one exists (simulated or railed)
+func _live_catalog_moon(home: String, mname: String) -> SimBody:
+	for mb: SimBody in moons:
+		if not mb.custom and mb.home_host_name == home and mb.body_name == mname:
+			return mb
+	return null
 
 
 ## build a catalog-moon SimBody (host is set by the caller — the home planet
@@ -177,19 +192,29 @@ func _planet_by_name(pname: String) -> SimBody:
 	return null
 
 
-func _has_custom_moons() -> bool:
-	for mb in moons:
-		if mb.custom:
+## live gravity is only needed while at least one user-added body is actually
+## being integrated — railed bodies are kinematic and don't hold physics open
+func _has_simulated_customs() -> bool:
+	for b: SimBody in customs:
+		if b.simulated:
+			return true
+	return false
+
+
+func _has_simulated_custom_moons() -> bool:
+	for mb: SimBody in moons:
+		if mb.custom and mb.simulated:
 			return true
 	return false
 
 
 ## which of a planet's catalog moons should render as decorative kinematic
-## pivots on its BodyView (the rest are simulated bodies with views of their own)
+## pivots on its BodyView — the ones with no live SimBody of their own
+## (simulated or railed bodies have real views)
 func decorative_moon_names(planet: SimBody) -> Array:
 	var out: Array = []
 	for md in planet.moons:
-		if not moons_simulated or (not sim_expensive_moons and md.name in Catalog.EXPENSIVE_MOONS):
+		if _live_catalog_moon(planet.body_name, md.name) == null:
 			out.append(md.name)
 	return out
 
@@ -225,6 +250,7 @@ func tick(dt: float) -> void:
 					b.vel_display = Vector3(nb.vx[i], nb.vy[i], nb.vz[i])
 			_update_moon_hosts()
 			_apply_moon_display(dt, SimTime.sim_days(sim_ms))
+		_tick_railed(SimTime.sim_days(sim_ms))
 	else:
 		for b: SimBody in planets:
 			var pa := Kepler.body_position_au(b.el, T)
@@ -245,6 +271,7 @@ func tick(dt: float) -> void:
 							Vector3.ZERO, _focus_abs_kepler(b.trail_next_day))
 					b.trail_next_day += b.trail_interval
 		_tick_moons_kepler(days)
+		_tick_railed(days)
 
 
 ## Kepler-mode moons: analytic circles around their home planet, on exactly
@@ -252,6 +279,8 @@ func tick(dt: float) -> void:
 ## seamless. Hosts never change here (stealing needs live gravity).
 func _tick_moons_kepler(days: float) -> void:
 	for mb: SimBody in moons:
+		if not mb.simulated:
+			continue   # railed — driven by _tick_railed
 		var host := mb.host
 		if host == null:
 			continue
@@ -282,6 +311,177 @@ func _moon_omega(mb: SimBody, host_mass: float) -> float:
 	return MoonMath.omega(mb.a_au, host_mass, mb.mass_solar, g_scale) * mb.orbit_sign
 
 
+# ================================================================
+# Per-body simulation toggle ("on rails")
+# ================================================================
+## Turning a body's simulation off freezes its motion onto the circular rail
+## defined by its state at that moment: it keeps gliding around its anchor
+## (host planet, else the sun) but exerts no gravity, feels none, can't
+## collide, and costs the integrator nothing. Turning it back on re-injects
+## it into live gravity at its current railed state. Moons + customs only.
+func set_simulated(body: SimBody, on: bool) -> void:
+	if body.is_sun or not (body.custom or body.is_moon) or body.simulated == on:
+		return
+	if on:
+		_unrail(body)
+	else:
+		_rail(body)
+
+
+func _rail(body: SimBody) -> void:
+	var days := SimTime.sim_days(sim_ms)
+	var i := nb.index_of(body) if physics_active else -1
+	var rel_p: Vector3
+	var rel_v: Vector3
+	if i >= 0:
+		var anchor: SimBody = body.host if (body.is_moon and body.host != null) else sun
+		var ai := maxi(nb.index_of(anchor), 0)
+		rel_p = Vector3(nb.px[i] - nb.px[ai], nb.py[i] - nb.py[ai], nb.pz[i] - nb.pz[ai])
+		rel_v = Vector3(nb.vx[i] - nb.vx[ai], nb.vy[i] - nb.vy[ai], nb.vz[i] - nb.vz[ai])
+	elif body.is_moon and not body.custom and body.host != null:
+		# Kepler-mode catalog moon: freeze its analytic circle in place
+		var om := _moon_omega(body, Catalog.PLANET_MASS.get(body.host.body_name, 3.0e-6))
+		var st := MoonMath.rel_state(body.a_au, body.incl_deg, body.phase0 + om * days, om)
+		rel_p = Vector3(st.p[0], st.p[1], st.p[2])
+		rel_v = Vector3(st.v[0], st.v[1], st.v[2])
+	else:
+		return   # nothing to freeze from
+	_freeze_rail(body, rel_p, rel_v, days)
+	if i >= 0:
+		var bary_before := nb.barycenter()
+		nb.remove_at(i)
+		nb.absorb_frame_shift(bary_before)
+		nb.refresh_display(true)
+		nb.compute_accel(g_scale)
+	body.trail_clear()
+	_drive_railed(body, days)
+	Events.toast_requested.emit("%s is on rails — gliding, no gravity" % body.body_name)
+	# with nothing left to integrate, planets can return to the exact ephemeris
+	if physics_active and not _has_simulated_customs() and not _has_simulated_custom_moons() and not physics_permanent:
+		exit_physics()
+
+
+## capture an anchor-relative state as the body's frozen circular rail
+func _freeze_rail(body: SimBody, rel_p: Vector3, rel_v: Vector3, days: float) -> void:
+	body.rail_a = maxf(rel_p.length(), 1e-9)
+	body.rail_u = rel_p / body.rail_a
+	var tang := rel_v - rel_v.dot(body.rail_u) * body.rail_u
+	if tang.length_squared() > 1e-24:
+		body.rail_w = tang.normalized()
+		body.rail_omega = tang.length() / body.rail_a
+	else:
+		# radial or zero velocity picks no circle — glide horizontally
+		# prograde at the circular rate for the anchor's mass
+		var anchor: SimBody = body.host if (body.is_moon and body.host != null) else sun
+		var w := body.rail_u.cross(Vector3.UP)
+		if w.length_squared() < 1e-12:
+			w = body.rail_u.cross(Vector3.RIGHT)
+		body.rail_w = w.normalized()
+		body.rail_omega = MoonMath.omega(body.rail_a, mass_of(anchor), 0.0, g_scale)
+	body.rail_day0 = days
+	body.simulated = false
+	body.trail_interval = (TAU / maxf(body.rail_omega, 1e-9)) / 128.0
+
+
+func _unrail(body: SimBody) -> void:
+	var days := SimTime.sim_days(sim_ms)
+	if not physics_active and body.is_moon and not body.custom and body.host != null:
+		# Kepler mode: the rail was frozen from the moon's own analytic circle
+		# and advances at the same rate — resuming the ephemeris is seamless
+		body.simulated = true
+		body.trail_clear()
+		Events.toast_requested.emit("%s rejoined the simulation" % body.body_name)
+		return
+	enter_physics()
+	var th := body.rail_omega * (days - body.rail_day0)
+	var rel := (body.rail_u * cos(th) + body.rail_w * sin(th)) * body.rail_a
+	var tang := (body.rail_w * cos(th) - body.rail_u * sin(th)) * (body.rail_a * body.rail_omega)
+	var anchor: SimBody = body.host if (body.is_moon and body.host != null) else sun
+	var ai := maxi(nb.index_of(anchor), 0)
+	var bary_before := nb.barycenter()
+	var idx := nb.add_body(body, base_mass_of(body))
+	nb.m[idx] = nb.base_m[idx] * body.mass_scale
+	nb.px[idx] = nb.px[ai] + rel.x
+	nb.py[idx] = nb.py[ai] + rel.y
+	nb.pz[idx] = nb.pz[ai] + rel.z
+	nb.vx[idx] = nb.vx[ai] + tang.x
+	nb.vy[idx] = nb.vy[ai] + tang.y
+	nb.vz[idx] = nb.vz[ai] + tang.z
+	nb.zero_momentum()
+	nb.absorb_frame_shift(bary_before)
+	nb.refresh_display(true)
+	nb.compute_accel(g_scale)
+	body.simulated = true
+	body.bind_t = 1.0
+	body.trail_clear()
+	Events.toast_requested.emit("%s rejoined the simulation" % body.body_name)
+
+
+## unsimulated bodies glide on their frozen circles — pure kinematics, both modes
+func _tick_railed(days: float) -> void:
+	for mb: SimBody in moons:
+		if not mb.simulated:
+			_drive_railed(mb, days)
+	for b: SimBody in customs:
+		if not b.simulated:
+			_drive_railed(b, days)
+
+
+func _drive_railed(b: SimBody, days: float) -> void:
+	var th := b.rail_omega * (days - b.rail_day0)
+	var rel := (b.rail_u * cos(th) + b.rail_w * sin(th)) * b.rail_a
+	var tang := (b.rail_w * cos(th) - b.rail_u * sin(th)) * (b.rail_a * b.rail_omega)
+	var anchor: SimBody = b.host if (b.is_moon and b.host != null) else sun
+	b.pos_au = anchor.pos_au + rel
+	b.r_au = b.pos_au.length()
+	b.vel_display = tang
+	b.vel_kms = (_vel_au_day(anchor) + tang).length() * Units.KMS_PER_AUDAY
+	if b.is_moon and b.host != null:
+		b.display_pos = anchor.display_pos + rel * b.disp_k
+	else:
+		b.display_pos = sun.display_pos + Units.to_display(rel)
+	if days >= b.trail_next_day:
+		var fa := Vector3.ZERO
+		if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
+			fa = TrailFrames.focus.display_pos
+		b.trail_push(days, b.display_pos - anchor.display_pos, anchor.display_pos, fa)
+		b.trail_next_day = days + b.trail_interval
+
+
+## a body's current velocity vector in AU/day (best effort in either mode)
+func _vel_au_day(b: SimBody) -> Vector3:
+	if physics_active and nb != null:
+		var i := nb.index_of(b)
+		if i >= 0:
+			return Vector3(nb.vx[i], nb.vy[i], nb.vz[i])
+	if not b.simulated:
+		var th := b.rail_omega * (SimTime.sim_days(sim_ms) - b.rail_day0)
+		var tang := (b.rail_w * cos(th) - b.rail_u * sin(th)) * (b.rail_a * b.rail_omega)
+		var anchor: SimBody = b.host if (b.is_moon and b.host != null) else sun
+		return _vel_au_day(anchor) + tang
+	if not b.is_sun and not b.el.is_empty():
+		var s := Kepler.state_vector(b.el, SimTime.julian_centuries(sim_ms))
+		return Vector3(s.v[0], s.v[1], s.v[2])
+	return Vector3.ZERO
+
+
+## Which bodies force the integrator below its 0.1-day cruise step, and by
+## how much: [{ body, factor }] sorted worst-first. factor 7 means the whole
+## system needs 7× the substeps because of that body. Empty outside physics.
+func step_costs() -> Array:
+	if not physics_active:
+		return []
+	var taus := nb.per_body_tau(g_scale)
+	var out: Array = []
+	for i in nb.count():
+		var h := clampf(taus[i] / 20.0, H_MIN, 0.1)
+		var f := 0.1 / h
+		if f > 1.05:
+			out.append({ body = nb.bodies[i], factor = f })
+	out.sort_custom(func(a, b) -> bool: return a.factor > b.factor)
+	return out
+
+
 ## analytic display position of a Kepler-mode moon at an arbitrary sim-day
 func _moon_kepler_display(mb: SimBody, day: float, om: float) -> Vector3:
 	var hp := Kepler.body_position_au(mb.host.el, SimTime.day_to_t(day))
@@ -300,7 +500,8 @@ func enter_physics() -> void:
 	for b in planets:
 		nb.add_body(b, Catalog.PLANET_MASS[b.body_name])
 	for mb in moons:
-		nb.add_body(mb, mb.mass_solar)
+		if mb.simulated:   # railed moons stay kinematic, outside the integrator
+			nb.add_body(mb, mb.mass_solar)
 	physics_active = true
 	_seed_planets()
 	Events.mode_changed.emit()
@@ -661,16 +862,25 @@ func add_custom_body(cfg: Dictionary) -> SimBody:
 	var bary_before := nb.barycenter()
 	var st := NBodySystem.state_vector_from_inputs(cfg)
 	var idx := nb.add_body(body, cfg.mass_e * Units.EARTH_SOLAR)
-	# anchor the relative state to the host's row (the sun by default)
+	# anchor the relative state to the host's row (the sun by default); a
+	# railed host has no row — anchor on its kinematic state instead
 	var ai := 0
 	if host != null:
-		ai = maxi(nb.index_of(host), 0)
-	nb.px[idx] = st.p[0] + nb.px[ai]
-	nb.py[idx] = st.p[1] + nb.py[ai]
-	nb.pz[idx] = st.p[2] + nb.pz[ai]
-	nb.vx[idx] = st.v[0] + nb.vx[ai]
-	nb.vy[idx] = st.v[1] + nb.vy[ai]
-	nb.vz[idx] = st.v[2] + nb.vz[ai]
+		ai = nb.index_of(host)
+	var ap: Vector3
+	var av: Vector3
+	if ai >= 0:
+		ap = Vector3(nb.px[ai], nb.py[ai], nb.pz[ai])
+		av = Vector3(nb.vx[ai], nb.vy[ai], nb.vz[ai])
+	else:
+		ap = Vector3(nb.px[0], nb.py[0], nb.pz[0]) + host.pos_au
+		av = _vel_au_day(host)
+	nb.px[idx] = st.p[0] + ap.x
+	nb.py[idx] = st.p[1] + ap.y
+	nb.pz[idx] = st.p[2] + ap.z
+	nb.vx[idx] = st.v[0] + av.x
+	nb.vy[idx] = st.v[1] + av.y
+	nb.vz[idx] = st.v[2] + av.z
 	nb.zero_momentum()
 	# the new body's mass shifts the barycenter used for display — absorb
 	# that jump so every already-visible body stays exactly where it was
@@ -700,7 +910,8 @@ func remove_custom_body(body: SimBody, preserve_frame: bool = true) -> void:
 	customs.erase(body)
 	_remove_from_system(body, preserve_frame)
 	# planets snap back to the ephemeris — unless a merger has altered the system
-	if customs.is_empty() and not _has_custom_moons() and not physics_permanent:
+	# (railed bodies don't hold physics open: they're kinematic in either mode)
+	if physics_active and not _has_simulated_customs() and not _has_simulated_custom_moons() and not physics_permanent:
 		exit_physics()
 
 
@@ -708,7 +919,7 @@ func remove_custom_body(body: SimBody, preserve_frame: bool = true) -> void:
 func remove_moon(body: SimBody, preserve_frame: bool = true) -> void:
 	moons.erase(body)
 	_remove_from_system(body, preserve_frame)
-	if physics_active and customs.is_empty() and not _has_custom_moons() and not physics_permanent:
+	if physics_active and not _has_simulated_customs() and not _has_simulated_custom_moons() and not physics_permanent:
 		exit_physics()
 
 
@@ -718,6 +929,20 @@ func _remove_planet(body: SimBody) -> void:
 
 
 func _remove_from_system(body: SimBody, preserve_frame: bool) -> void:
+	# railed moons anchored on the departing body get refrozen around the sun
+	# at their current absolute state, so they keep gliding instead of
+	# circling a ghost
+	var days := SimTime.sim_days(sim_ms)
+	for mb: SimBody in moons:
+		if mb != body and not mb.simulated and mb.host == body:
+			var th := mb.rail_omega * (days - mb.rail_day0)
+			var rel := (mb.rail_u * cos(th) + mb.rail_w * sin(th)) * mb.rail_a
+			var tang := (mb.rail_w * cos(th) - mb.rail_u * sin(th)) * (mb.rail_a * mb.rail_omega)
+			var abs_v := _vel_au_day(body) + tang
+			mb.host = null
+			mb.host_prev = null
+			_freeze_rail(mb, body.pos_au + rel, abs_v, days)
+			mb.trail_clear()
 	var pi := nb.index_of(body) if nb != null else -1
 	if pi >= 0:
 		var bary_before := nb.barycenter() if preserve_frame else Vector3.ZERO
@@ -732,6 +957,9 @@ func _remove_from_system(body: SimBody, preserve_frame: bool) -> void:
 # Live editing & time controls
 # ================================================================
 func set_mass_scale(body: SimBody, mult: float) -> void:
+	if not body.simulated:
+		body.mass_scale = mult   # inert while on rails; applied on rejoin
+		return
 	enter_physics()   # masses only matter to the N-body engine
 	body.mass_scale = mult
 	var i := nb.index_of(body)

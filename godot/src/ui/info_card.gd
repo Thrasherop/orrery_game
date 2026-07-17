@@ -17,6 +17,7 @@ var st_radius: Label
 var st_tilt: Label
 var mass_val: Label
 var mass_slider: HSlider
+var sim_check: CheckButton
 var remove_btn: Button
 
 
@@ -90,6 +91,17 @@ func setup(sim_: Simulation) -> void:
 	mass_slider.value_changed.connect(_on_mass_slider)
 	box.add_child(mass_slider)
 
+	# per-body simulation toggle (moons + custom bodies)
+	sim_check = CheckButton.new()
+	sim_check.text = "Simulated"
+	sim_check.tooltip_text = "Off = on rails: glides on a fixed circular orbit, exerts and feels no gravity, can't collide — and stops costing physics steps"
+	sim_check.focus_mode = Control.FOCUS_NONE
+	sim_check.add_theme_font_size_override("font_size", UITheme.fs(12))
+	sim_check.add_theme_color_override("font_color", UITheme.TEXT)
+	sim_check.toggled.connect(_on_sim_toggled)
+	sim_check.visible = false
+	box.add_child(sim_check)
+
 	remove_btn = Button.new()
 	remove_btn.text = "Remove body"
 	remove_btn.focus_mode = Control.FOCUS_NONE
@@ -158,6 +170,8 @@ func _on_selection_changed(body) -> void:
 		st_radius.text = "%s km" % Fmt.fmt_big(b.radius_km)
 		st_tilt.text = "%.1f°" % b.tilt
 	remove_btn.visible = b.custom
+	sim_check.visible = b.custom or b.is_moon
+	sim_check.set_pressed_no_signal(b.simulated)
 	mass_slider.set_value_no_signal(roundf(100.0 * (log(b.mass_scale) / log(10.0)) if b.mass_scale > 0.0 else 0.0))
 	_update_mass_readout(b)
 
@@ -189,6 +203,15 @@ func _on_mass_slider(value: float) -> void:
 	var mult := pow(10.0, value / 100.0)   # 0.01× – 10,000×
 	sim.set_mass_scale(b, mult)
 	_update_mass_readout(b)
+
+
+func _on_sim_toggled(on: bool) -> void:
+	var b = Events.selected
+	if b == null:
+		return
+	sim.set_simulated(b, on)
+	# reflect what the sim actually did (the toggle is a no-op for planets)
+	sim_check.set_pressed_no_signal(b.simulated)
 
 
 func _on_remove() -> void:
