@@ -5,10 +5,10 @@ extends CanvasLayer
 ## stays in the dock). Code-built like every other panel.
 
 const MODE_TIPS := [
-	"Paths relative to the Sun (moons: their planet) — clean orbit rings.",
-	"Inertial space: the Sun wobbles and whole orbits drift around the barycenter.",
+	"Paths pinned to the Sun (moons: to their planet) — clean orbit rings. If a path still wiggles, that's the Sun itself being tugged around by something heavy; the planet isn't really swerving.",
+	"Nothing pinned: true paths through space. The Sun wobbles, and heavy newcomers swing whole orbits around the system's center of mass.",
 	"The Solar System never stands still — orbits stretch into helices as it drifts through the Milky Way.",
-	"Paths relative to the selected body — watch other planets trace retrograde loops.",
+	"Paths as seen from the selected body — watch the other planets trace looping retrograde curls, the way ancient astronomers saw them from Earth.",
 ]
 
 var sim: Simulation

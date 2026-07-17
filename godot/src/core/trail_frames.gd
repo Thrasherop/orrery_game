@@ -16,7 +16,7 @@ class_name TrailFrames
 
 enum { MODE_LOCAL, MODE_INERTIAL, MODE_GALAXY, MODE_FOCUS }
 
-const MODE_NAMES := ["Local", "True motion", "Galaxy", "Focus"]
+const MODE_NAMES := ["Sun-locked", "True motion", "Galaxy", "Focus"]
 
 ## Display-space drift of the whole solar system through the galaxy
 ## (galaxy mode only). Direction is tilted out of the ecliptic toward the

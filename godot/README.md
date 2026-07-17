@@ -7,9 +7,10 @@ and mergers, custom body injection, mass/G editing, realtime orbit trails,
 procedural planet textures, moons, Saturn's rings, and the milky-way starfield.
 
 Orbit trails support four reference frames (`src/core/trail_frames.gd`),
-switchable live with no reset — Local (sun/host-relative rings), True motion
-(inertial barycentric), Galaxy (the system drifting through the Milky Way)
-and Focus (relative to the selected body — retrograde loops).
+switchable live with no reset — Sun-locked (paths pinned to the Sun/host,
+clean rings), True motion (inertial barycentric), Galaxy (the system
+drifting through the Milky Way) and Focus (relative to the selected body —
+retrograde loops).
 
 ## Running
 
