@@ -24,3 +24,5 @@ rework mobile UI
 max simulation speed button
 
 export/import saves
+
+relativistic gravity
