@@ -53,6 +53,38 @@ void nb_positions(double *out) {
 EMSCRIPTEN_KEEPALIVE
 double nb_tau_min() { return g_core.tau_min; }
 
+// One whole frame (mirrors NBodyNative.advance_frame for the web bridge).
+// in  = [px(n),py(n),pz(n),vx(n),vy(n),vz(n),m(n),size(n),bound_k(n)]  (9n)
+// out = [status,merge_i,merge_j,work,blocks,remaining,tau_min,
+//        px(n),py(n),pz(n),vx(n),vy(n),vz(n),disp(3n),tau_body(n)]     (7+10n)
+EMSCRIPTEN_KEEPALIVE
+int nb_frame(int n, double *in, double g, double dt, double hmin, double hmax,
+		double tfrac, double budget, double fcx, double fcy, double fcz, double *out) {
+	if (g_core.n != n) g_core.resize(n);
+	for (int i = 0; i < n; i++) {
+		g_core.px[i] = in[i]; g_core.py[i] = in[n + i]; g_core.pz[i] = in[2 * n + i];
+		g_core.vx[i] = in[3 * n + i]; g_core.vy[i] = in[4 * n + i]; g_core.vz[i] = in[5 * n + i];
+		g_core.m[i] = in[6 * n + i]; g_core.size[i] = in[7 * n + i]; g_core.bound_k[i] = in[8 * n + i];
+	}
+	g_core.frame_corr_x = fcx; g_core.frame_corr_y = fcy; g_core.frame_corr_z = fcz;
+	g_core.compute_accel(g);
+	g_core.refresh_display(true);   // always reset (matches the desktop dispatch)
+	int status = g_core.advance(dt, g, hmin, hmax, tfrac, budget);
+	out[0] = status; out[1] = g_core.merge_i; out[2] = g_core.merge_j;
+	out[3] = g_core.work; out[4] = g_core.blocks; out[5] = g_core.remaining_days; out[6] = g_core.tau_min;
+	int o = 7;
+	for (int i = 0; i < n; i++) out[o + i] = g_core.px[i]; o += n;
+	for (int i = 0; i < n; i++) out[o + i] = g_core.py[i]; o += n;
+	for (int i = 0; i < n; i++) out[o + i] = g_core.pz[i]; o += n;
+	for (int i = 0; i < n; i++) out[o + i] = g_core.vx[i]; o += n;
+	for (int i = 0; i < n; i++) out[o + i] = g_core.vy[i]; o += n;
+	for (int i = 0; i < n; i++) out[o + i] = g_core.vz[i]; o += n;
+	for (int i = 0; i < n; i++) { out[o + 3 * i] = g_core.dispx[i]; out[o + 3 * i + 1] = g_core.dispy[i]; out[o + 3 * i + 2] = g_core.dispz[i]; }
+	o += 3 * n;
+	for (int i = 0; i < n; i++) out[o + i] = g_core.tau_body[i];
+	return status;
+}
+
 // Synthetic representative system (sun + planets + a few tight fast bodies to
 // force subcycling) — lets the browser prove the pipeline before real state
 // marshalling.

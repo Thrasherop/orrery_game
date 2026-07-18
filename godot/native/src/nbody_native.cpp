@@ -12,6 +12,52 @@ void NBodyNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("bench_blocks", "count", "H", "g_scale"), &NBodyNative::bench_blocks);
 	ClassDB::bind_method(D_METHOD("positions"), &NBodyNative::positions);
 	ClassDB::bind_method(D_METHOD("get_tau_min"), &NBodyNative::get_tau_min);
+	ClassDB::bind_method(D_METHOD("advance_frame", "px", "py", "pz", "vx", "vy", "vz",
+			"m", "size", "bound_k", "fcx", "fcy", "fcz", "g_scale", "dt_days",
+			"h_min", "h_max", "tau_frac", "budget", "reset_display"),
+			&NBodyNative::advance_frame);
+}
+
+Dictionary NBodyNative::advance_frame(
+		const PackedFloat64Array &ipx, const PackedFloat64Array &ipy, const PackedFloat64Array &ipz,
+		const PackedFloat64Array &ivx, const PackedFloat64Array &ivy, const PackedFloat64Array &ivz,
+		const PackedFloat64Array &im, const PackedFloat64Array &isize, const PackedFloat64Array &ibound_k,
+		double fcx, double fcy, double fcz, double g_scale, double dt_days,
+		double h_min, double h_max, double tau_frac, double budget, bool reset_display) {
+	int n = ipx.size();
+	if (core.n != n) { core.resize(n); reset_display = true; } // body set changed → reset display history
+	for (int i = 0; i < n; i++) {
+		core.px[i] = ipx[i]; core.py[i] = ipy[i]; core.pz[i] = ipz[i];
+		core.vx[i] = ivx[i]; core.vy[i] = ivy[i]; core.vz[i] = ivz[i];
+		core.m[i] = im[i]; core.size[i] = isize[i]; core.bound_k[i] = ibound_k[i];
+	}
+	core.frame_corr_x = fcx; core.frame_corr_y = fcy; core.frame_corr_z = fcz;
+	core.compute_accel(g_scale);              // prime ax + tau to match the synced state
+	if (reset_display) core.refresh_display(true);
+	int status = core.advance(dt_days, g_scale, h_min, h_max, tau_frac, budget);
+
+	PackedFloat64Array opx, opy, opz, ovx, ovy, ovz, odisp, otau;
+	opx.resize(n); opy.resize(n); opz.resize(n);
+	ovx.resize(n); ovy.resize(n); ovz.resize(n);
+	odisp.resize((int64_t)n * 3); otau.resize(n);
+	for (int i = 0; i < n; i++) {
+		opx[i] = core.px[i]; opy[i] = core.py[i]; opz[i] = core.pz[i];
+		ovx[i] = core.vx[i]; ovy[i] = core.vy[i]; ovz[i] = core.vz[i];
+		odisp[i * 3 + 0] = core.dispx[i]; odisp[i * 3 + 1] = core.dispy[i]; odisp[i * 3 + 2] = core.dispz[i];
+		otau[i] = core.tau_body[i];
+	}
+	Dictionary out;
+	out["status"] = status;
+	out["merge_i"] = core.merge_i;
+	out["merge_j"] = core.merge_j;
+	out["work"] = core.work;
+	out["blocks"] = core.blocks;
+	out["remaining_days"] = core.remaining_days;
+	out["tau_min"] = core.tau_min;
+	out["px"] = opx; out["py"] = opy; out["pz"] = opz;
+	out["vx"] = ovx; out["vy"] = ovy; out["vz"] = ovz;
+	out["disp"] = odisp; out["tau_body"] = otau;
+	return out;
 }
 
 void NBodyNative::load(const PackedFloat64Array &ipx, const PackedFloat64Array &ipy, const PackedFloat64Array &ipz,

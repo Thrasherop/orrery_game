@@ -157,13 +157,20 @@ func _test_physics() -> void:
 func _test_budget() -> void:
 	var sim := _make_sim(true, true)
 	_enter_physics(sim)
-	sim.speed = 31557600.0   # Year/s — far beyond what Io's timestep allows
+	# Year/s used to saturate the substep budget; the compiled kernel (when
+	# present) now keeps up at full speed here — either way the frame stays cheap.
+	sim.speed = 31557600.0   # Year/s
 	var t0 := Time.get_ticks_msec()
 	for i in 10:
 		sim.tick(1.0 / 60.0)
 	var elapsed := Time.get_ticks_msec() - t0
 	_check(elapsed < 3000, "10 Year/s ticks stay within budget (%d ms)" % elapsed)
-	_check(sim.lag_ratio < 0.95, "lag is detected and reported (ratio %.2f)" % sim.lag_ratio)
+	# Push far past what even the fast kernel can integrate in one frame — the
+	# lag mechanism must still engage and report the shortfall.
+	sim.speed = 31557600.0 * 60.0   # 60 years/s
+	for i in 20:
+		sim.tick(1.0 / 60.0)
+	_check(sim.lag_ratio < 0.95, "extreme speed still engages the lag mechanism (ratio %.2f)" % sim.lag_ratio)
 
 
 func _test_merge() -> void:

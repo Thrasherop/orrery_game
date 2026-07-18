@@ -11,6 +11,10 @@ void NBodyCore::resize(int n_) {
 	tau_body.assign(n, INF_D);
 	k_sub.assign(n, 1);
 	enc_min_r2.assign((size_t)n * n, INF_D);
+	size.assign(n, 1.0);
+	bound_k.assign(n, 0.0);
+	dispx.assign(n, 0.0); dispy.assign(n, 0.0); dispz.assign(n, 0.0);
+	pdispx.assign(n, 0.0); pdispy.assign(n, 0.0); pdispz.assign(n, 0.0);
 }
 
 // Faithful port of NBodySystem.compute_accel: hoisted inner loop + per-body
@@ -153,4 +157,111 @@ void NBodyCore::step_block(double H, double g_scale) {
 		const double h2 = H / (2.0 * (double)k_sub[i]);
 		vx[i] += ax[i] * h2; vy[i] += ay[i] * h2; vz[i] += az[i] * h2;
 	}
+}
+
+// --- display compression (Units.gd) ---
+double NBodyCore::dist_scale(double r) {
+	if (r <= 0.0) return 0.0;
+	if (r < DIST_R0) return DIST_K * std::pow(DIST_R0, DIST_P) * (r / DIST_R0);
+	return DIST_K * std::pow(r, DIST_P);
+}
+
+void NBodyCore::to_display(double vx_, double vy_, double vz_, double &ox, double &oy, double &oz) {
+	double r = std::sqrt(vx_ * vx_ + vy_ * vy_ + vz_ * vz_);
+	if (r < 1e-9) { ox = 0.0; oy = 0.0; oz = 0.0; return; }
+	double s = dist_scale(r) / r;
+	ox = vx_ * s; oy = vy_ * s; oz = vz_ * s;
+}
+
+// Faithful port of NBodySystem.refresh_display (sun-anchored heliocentric
+// compression; the sun's own barycentric wobble is compressed separately).
+void NBodyCore::refresh_display(bool reset_prev) {
+	// mass-weighted barycenter
+	double bx = 0.0, by = 0.0, bz = 0.0, M = 0.0;
+	for (int i = 0; i < n; i++) { bx += px[i] * m[i]; by += py[i] * m[i]; bz += pz[i] * m[i]; M += m[i]; }
+	if (M != 0.0) { bary_x = bx / M; bary_y = by / M; bary_z = bz / M; }
+	double sdx = 0.0, sdy = 0.0, sdz = 0.0;
+	if (n > 0) {
+		to_display(px[0] - bary_x + frame_corr_x, py[0] - bary_y + frame_corr_y,
+				pz[0] - bary_z + frame_corr_z, sdx, sdy, sdz);
+	}
+	for (int i = 0; i < n; i++) {
+		if (!reset_prev) { pdispx[i] = dispx[i]; pdispy[i] = dispy[i]; pdispz[i] = dispz[i]; }
+		if (i == 0) { dispx[i] = sdx; dispy[i] = sdy; dispz[i] = sdz; }
+		else {
+			double ox, oy, oz;
+			to_display(px[i] - px[0], py[i] - py[0], pz[i] - pz[0], ox, oy, oz);
+			dispx[i] = sdx + ox; dispy[i] = sdy + oy; dispz[i] = sdz + oz;
+		}
+		if (reset_prev) { pdispx[i] = dispx[i]; pdispy[i] = dispy[i]; pdispz[i] = dispz[i]; }
+	}
+}
+
+double NBodyCore::real_distance(int i, int j) const {
+	double dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j];
+	return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+double NBodyCore::swept_distance(int i, int j) const {
+	double p0x = pdispx[i] - pdispx[j], p0y = pdispy[i] - pdispy[j], p0z = pdispz[i] - pdispz[j];
+	double ux = (dispx[i] - dispx[j]) - p0x;
+	double uy = (dispy[i] - dispy[j]) - p0y;
+	double uz = (dispz[i] - dispz[j]) - p0z;
+	double uu = ux * ux + uy * uy + uz * uz;
+	double t = 0.0;
+	if (uu > 1e-12) t = -(p0x * ux + p0y * uy + p0z * uz) / uu;
+	if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
+	double cx = p0x + ux * t, cy = p0y + uy * t, cz = p0z + uz * t;
+	return std::sqrt(cx * cx + cy * cy + cz * cz);
+}
+
+double NBodyCore::enc_distance(int i, int j) const {
+	if (!had_fast) return INF_D;
+	double a = enc_min_r2[(size_t)i * n + j];
+	double b = enc_min_r2[(size_t)j * n + i];
+	double r2 = a < b ? a : b;
+	return r2 < INF_D ? std::sqrt(r2) : INF_D;
+}
+
+// Faithful port of Simulation._step_physics's block loop (minus trails, which
+// stay in GDScript). Returns DONE/BUDGET/MERGE; on MERGE, merge_i/merge_j are
+// the colliding pair for the caller to resolve.
+int NBodyCore::advance(double dt_days, double g_scale, double h_min, double h_max,
+		double tau_frac, double budget) {
+	double remaining = dt_days;
+	work = 0.0;
+	blocks = 0;
+	merge_i = -1; merge_j = -1;
+	while (remaining > 1e-9) {
+		if (work >= budget) { remaining_days = remaining; return BUDGET; }
+		blocks++;
+		double H = tau_min * tau_frac;
+		if (H < h_min) H = h_min; else if (H > h_max) H = h_max;
+		if (H > remaining) H = remaining;
+		step_block(H, g_scale);
+		work += 1.0 + 2.0 * (double)last_fast_evals / (double)(n * n > 0 ? n * n : 1);
+		refresh_display(false);
+		// collision scan (boundary cadence)
+		for (int i = 0; i < n - 1; i++) {
+			for (int j = i + 1; j < n; j++) {
+				double bk = 0.0;
+				if (bound_k[i] > 0.0) bk = bound_k[i];
+				if (bound_k[j] > bk) bk = bound_k[j];
+				double thresh = 0.75 * (size[i] + size[j]);
+				bool hit;
+				if (bk > 0.0) {
+					double rmin = real_distance(i, j);
+					double enc = enc_distance(i, j);
+					if (enc < rmin) rmin = enc;
+					hit = rmin * bk < thresh;
+				} else {
+					hit = swept_distance(i, j) < thresh;
+				}
+				if (hit) { merge_i = i; merge_j = j; remaining -= H; remaining_days = remaining; return MERGE; }
+			}
+		}
+		remaining -= H;
+	}
+	remaining_days = remaining > 0.0 ? remaining : 0.0;
+	return remaining > 1e-9 ? BUDGET : DONE;
 }

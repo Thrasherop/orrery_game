@@ -22,7 +22,66 @@ func _ready() -> void:
 	print("[native_bench] NBodyNative loaded OK")
 	_run("all moons", true)
 	_run("planets only", false)
+	_test_advance_frame()
 	get_tree().quit(0)
+
+
+## Validate the full-frame native advance() against a GDScript block-loop
+## replica on identical seeded all-moons state: physics must stay bit-exact
+## (collision disabled via size=0 so we isolate the integration).
+func _test_advance_frame() -> void:
+	print("\n=== advance_frame vs GDScript block loop (all moons) ===")
+	var sim := Simulation.new()
+	add_child(sim)
+	sim.sim_ms = EPOCH_MS
+	if not sim.moons_simulated:
+		sim.set_moons_simulated(true)
+	sim.tick(0.0)
+	sim.add_custom_body({ name = "Trigger", mass_e = 0.0001, dist_au = 40.0,
+		lon_deg = 0.0, lat_deg = 0.0, speed_kms = 4.7, dir_deg = 0.0 })
+	var nb = sim.nb
+	var n := nb.count()
+	var g: float = sim.g_scale
+	var fc: Vector3 = nb.frame_corr
+	var snap := _snapshot(nb)
+	var zeros := PackedFloat64Array(); zeros.resize(n)   # size + bound_k = 0 → no merges
+
+	var dt_days := 3.0
+	var H_MIN := 1e-4
+	var H_MAX := 0.1
+	var TAU_FRAC := 0.4
+	var BIG := 1.0e9
+
+	# native: one advance_frame call over the whole dt
+	var nat = ClassDB.instantiate("NBodyNative")
+	var r: Dictionary = nat.advance_frame(snap.px, snap.py, snap.pz, snap.vx, snap.vy, snap.vz,
+		snap.m, zeros, zeros, fc.x, fc.y, fc.z, g, dt_days, H_MIN, H_MAX, TAU_FRAC, BIG, true)
+
+	# gdscript reference: same schedule, on the same snapshot
+	nb.px = snap.px.duplicate(); nb.py = snap.py.duplicate(); nb.pz = snap.pz.duplicate()
+	nb.vx = snap.vx.duplicate(); nb.vy = snap.vy.duplicate(); nb.vz = snap.vz.duplicate()
+	nb.m = snap.m.duplicate()
+	nb.compute_accel(g)
+	nb.refresh_display(true)
+	var remaining := dt_days
+	var work := 0.0
+	while remaining > 1e-9 and work < BIG:
+		var H := minf(clampf(nb.tau_min * TAU_FRAC, H_MIN, H_MAX), remaining)
+		nb.step_block(H, g)
+		work += 1.0 + 2.0 * float(nb.last_fast_evals) / maxf(n * n, 1.0)
+		nb.refresh_display(false)
+		remaining -= H
+
+	var rpx: PackedFloat64Array = r.px
+	var rvx: PackedFloat64Array = r.vx
+	var max_dp := 0.0
+	var max_dv := 0.0
+	for i in n:
+		max_dp = maxf(max_dp, absf(rpx[i] - nb.px[i]))
+		max_dv = maxf(max_dv, absf(rvx[i] - nb.vx[i]))
+	print("  status=%d blocks=%d  max |Δpx|=%s max |Δvx|=%s %s" % [
+		int(r.status), int(r.blocks), _sci(max_dp), _sci(max_dv),
+		"(bit-exact)" if max_dp == 0.0 and max_dv == 0.0 else "(MISMATCH)"])
 
 
 func _snapshot(nb) -> Dictionary:

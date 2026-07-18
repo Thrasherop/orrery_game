@@ -10,3 +10,6 @@ web-wasm/*.wasm
 # stray object files from build attempts
 *.o
 *.obj
+
+# SCons cache
+.sconsign.dblite

@@ -23,6 +23,11 @@ const MOON_TRAIL_MAX := 384              # moon trail buffer (tight coils, ~3 or
 # the fast inner moons excluded (~107); with Io included, Year/s honestly
 # runs at about a quarter speed instead of dropping frames.
 const MAX_SUBSTEPS := 120
+# The compiled kernel is ~40x faster per block, so the wall-time protection can
+# be far higher without risking a frame hang — this is what actually lifts the
+# top time-speed (Year/s and beyond) once the kernel is doing the integration.
+# ~1200 work ≈ a couple of ms/frame at native speed.
+const MAX_SUBSTEPS_NATIVE := 1200
 const H_MIN := 1e-4                      # days — a near-contact pair can't stall the budget
 
 # Block time-stepping: fast moons subcycle inside a 0.1-day block instead of
@@ -30,6 +35,10 @@ const H_MIN := 1e-4                      # days — a near-contact pair can't st
 # fast moon no longer collapses the global step. Set false to fall back to the
 # original global-substep integrator (kept as the k==1 fast path anyway).
 const USE_BLOCK := true
+# Route the per-frame block loop through the compiled kernel when one is
+# available (NBodyNative on desktop/Android, WASM on web); falls back to the
+# GDScript path automatically. Set false to force the pure-GDScript integrator.
+const USE_NATIVE := true
 # Block size cap as a fraction of the tightest pair's dynamical time: with
 # K_MAX/SAFETY = 8/20, H ≤ 0.4·tau_min guarantees the tightest body resolves at
 # the deepest rung (h = tau_min/20, the old global step's finest resolution).
@@ -64,8 +73,13 @@ var physics_permanent := false
 var nb: NBodySystem = null
 var custom_count := 0
 
+# Compiled-kernel backend (created lazily; null-safe — ready() gates use).
+var _kernel: NativeKernel = null
+
 
 func _init() -> void:
+	if USE_NATIVE:
+		_kernel = NativeKernel.new()   # detects backend; web loads its module async
 	sim_ms = Time.get_unix_time_from_system() * 1000.0
 	var sun_def := Catalog.make_sun()
 	sun = SimBody.from_def(sun_def)
@@ -707,7 +721,17 @@ func _moon_mapped(mb: SimBody, host: SimBody, k: float, mi: int, helio: Vector3)
 	return host.display_pos + rel * k
 
 
+## Route one frame's integration to the compiled kernel when ready, else the
+## pure-GDScript path. Both keep identical game semantics; only the O(n²) block
+## loop moves off GDScript.
 func _step_physics(dt_days: float, end_day: float) -> void:
+	if _kernel != null and _kernel.ready():
+		_step_physics_native(dt_days, end_day)
+	else:
+		_step_physics_gdscript(dt_days, end_day)
+
+
+func _step_physics_gdscript(dt_days: float, end_day: float) -> void:
 	var day := end_day - dt_days
 	var remaining := dt_days
 	var steps := 0
@@ -832,6 +856,117 @@ func _step_physics(dt_days: float, end_day: float) -> void:
 	lag_ratio = lag_ratio * 0.9 + 0.1 * (1.0 if dt_days <= 0.0 else (dt_days - remaining) / dt_days)
 	if remaining > 1e-9:
 		sim_ms -= remaining * 86400000.0
+
+
+## Native path: the compiled kernel runs the whole frame's block loop
+## (integration + display + collision detection); GDScript keeps the game
+## logic. On a detected collision the kernel returns the pair and the leftover
+## time; we resolve the merge here and continue for the remainder. Trails
+## advance once per frame (moons still handled in _apply_moon_display).
+func _step_physics_native(dt_days: float, end_day: float) -> void:
+	var t_start := Time.get_ticks_usec()
+	var remaining := dt_days
+	var total_work := 0.0
+	var total_blocks := 0
+	var sizes := _collect_sizes()
+	var bks := _collect_bound_k()
+	var guard := 0
+	while remaining > 1e-9:
+		guard += 1
+		if guard > nb.count() + 5:
+			break   # safety against a pathological merge loop
+		var budget_left := float(MAX_SUBSTEPS_NATIVE) - total_work
+		if budget_left <= 0.0:
+			break
+		var r := _kernel.advance(nb, sizes, bks, nb.frame_corr, g_scale, remaining,
+				H_MIN, 0.1, H_TAU_FRAC, budget_left)
+		if r.is_empty():
+			_step_physics_gdscript(remaining, end_day)   # bridge hiccup — finish on GDScript
+			return
+		_apply_kernel_result(r)
+		total_work += float(r.work)
+		total_blocks += int(r.blocks)
+		if int(r.status) == NativeKernel.ST_MERGE:
+			_merge_bodies(int(r.merge_i), int(r.merge_j))
+			sizes = _collect_sizes()
+			bks = _collect_bound_k()
+			remaining = float(r.remaining_days)
+		else:
+			remaining = float(r.remaining_days)
+			break
+	_sample_planet_trails(end_day)
+	var nn := nb.count()
+	perf = {
+		steps = total_blocks, work = total_work,
+		pair_evals = total_blocks * nn * (nn - 1) / 2, h_last = 0.0,
+		us_step = Time.get_ticks_usec() - t_start,
+		us_display = 0, us_collide = 0, us_trails = 0,
+	}
+	lag_ratio = lag_ratio * 0.9 + 0.1 * (1.0 if dt_days <= 0.0 else (dt_days - remaining) / dt_days)
+	if remaining > 1e-9:
+		sim_ms -= remaining * 86400000.0
+
+
+func _collect_sizes() -> PackedFloat64Array:
+	var n := nb.count()
+	var out := PackedFloat64Array()
+	out.resize(n)
+	for i in n:
+		out[i] = (nb.bodies[i] as SimBody).size
+	return out
+
+
+## bound-moon display amplification per body (0 = free / not a moon); the
+## kernel tests bound-moon collisions in real space scaled by this.
+func _collect_bound_k() -> PackedFloat64Array:
+	var n := nb.count()
+	var out := PackedFloat64Array()
+	out.resize(n)
+	for i in n:
+		var b: SimBody = nb.bodies[i]
+		out[i] = b.disp_k if (b.is_moon and b.host != null) else 0.0
+	return out
+
+
+func _apply_kernel_result(r: Dictionary) -> void:
+	nb.px = r.px; nb.py = r.py; nb.pz = r.pz
+	nb.vx = r.vx; nb.vy = r.vy; nb.vz = r.vz
+	nb.tau_min = float(r.tau_min)
+	nb.tau_body = r.tau_body
+	var n := nb.count()
+	if nb.disp.size() != n:
+		nb.disp.resize(n)
+	var disp: PackedFloat64Array = r.disp
+	for i in n:
+		nb.disp[i] = Vector3(disp[3 * i], disp[3 * i + 1], disp[3 * i + 2])
+
+
+## Per-frame planet/custom trail sampling (same cadence + angle trigger as the
+## old per-substep pass, now driven once from the frame's final positions).
+func _sample_planet_trails(day: float) -> void:
+	var focus_abs := Vector3.ZERO
+	if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
+		var fi := nb.index_of(TrailFrames.focus)
+		focus_abs = nb.disp[fi] if fi >= 0 else TrailFrames.focus.display_pos
+	for i in nb.count():
+		var b: SimBody = nb.bodies[i]
+		if b.is_moon:
+			continue
+		var need := day >= b.trail_next_day
+		if not need and b.trail_lv_ok:
+			var vm := sqrt(nb.vx[i] * nb.vx[i] + nb.vy[i] * nb.vy[i] + nb.vz[i] * nb.vz[i])
+			if vm > 1e-12 and (nb.vx[i] * b.trail_lv.x + nb.vy[i] * b.trail_lv.y + nb.vz[i] * b.trail_lv.z) / vm < COS_TRAIL:
+				need = true
+		if need:
+			b.trail_push(day, nb.disp[i] - nb.disp[0], nb.disp[0], focus_abs)
+			var vm2 := sqrt(nb.vx[i] * nb.vx[i] + nb.vy[i] * nb.vy[i] + nb.vz[i] * nb.vz[i])
+			if vm2 == 0.0:
+				vm2 = 1.0
+			b.trail_lv = Vector3(nb.vx[i] / vm2, nb.vy[i] / vm2, nb.vz[i] / vm2)
+			b.trail_lv_ok = true
+			var r_sun := Vector3(nb.px[i] - nb.px[0], nb.py[i] - nb.py[0], nb.pz[i] - nb.pz[0]).length()
+			b.trail_interval = _trail_interval(b, r_sun)
+			b.trail_next_day = day + b.trail_interval
 
 
 ## The sun always survives; otherwise the heavier body does, growing by
