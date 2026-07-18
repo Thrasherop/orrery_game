@@ -1,0 +1,7 @@
+C:/Users/ultra/Desktop/vscode/flutter/solar_systeem_game/godot/native/build-android-arm64/CMakeFiles/orrery_native.dir
+C:/Users/ultra/Desktop/vscode/flutter/solar_systeem_game/godot/native/build-android-arm64/CMakeFiles/edit_cache.dir
+C:/Users/ultra/Desktop/vscode/flutter/solar_systeem_game/godot/native/build-android-arm64/CMakeFiles/rebuild_cache.dir
+C:/Users/ultra/Desktop/vscode/flutter/solar_systeem_game/godot/native/build-android-arm64/godot-cpp/CMakeFiles/generate_bindings.dir
+C:/Users/ultra/Desktop/vscode/flutter/solar_systeem_game/godot/native/build-android-arm64/godot-cpp/CMakeFiles/godot-cpp.dir
+C:/Users/ultra/Desktop/vscode/flutter/solar_systeem_game/godot/native/build-android-arm64/godot-cpp/CMakeFiles/edit_cache.dir
+C:/Users/ultra/Desktop/vscode/flutter/solar_systeem_game/godot/native/build-android-arm64/godot-cpp/CMakeFiles/rebuild_cache.dir
