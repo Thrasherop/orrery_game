@@ -132,6 +132,16 @@ func barycenter() -> Vector3:
 	return Vector3(bx / M, by / M, bz / M)
 
 
+## Body i's raw barycentric offset in AU (position − barycenter), frame-corrected
+## so injection/removal doesn't make it jump — the honest "spatial coordinates"
+## used by the Real-space (MODE_TRUE) path frame. Independent of the sun-anchored
+## disp[]; pass a barycenter precomputed once per frame. The sun (i=0) returns
+## exactly what refresh_display() compresses into disp[0], so it renders
+## identically in both frames.
+func bary_offset_au(i: int, bary: Vector3) -> Vector3:
+	return Vector3(px[i] - bary.x, py[i] - bary.y, pz[i] - bary.z) + frame_corr
+
+
 ## Call right after a body is injected or removed (mass appearing/vanishing
 ## rather than being conserved, e.g. NOT a merge) with the barycenter from
 ## just before the change. Folds the resulting jump into frame_corr so

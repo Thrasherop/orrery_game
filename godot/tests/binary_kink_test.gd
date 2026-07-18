@@ -26,6 +26,7 @@ func _ready() -> void:
 	var v_local: Array[Vector3] = []   # "Sun-locked" trail vertex
 	var v_inert: Array[Vector3] = []   # "True motion" trail vertex
 	var v_galaxy: Array[Vector3] = []  # "Galaxy" trail vertex
+	var v_true: Array[Vector3] = []    # "Real space" (MODE_TRUE) trail vertex
 	var min_sep := INF
 	var sun_peak_kms := 0.0
 
@@ -48,6 +49,7 @@ func _ready() -> void:
 		v_local.append(local)                       # MODE_LOCAL
 		v_inert.append(anchor + local)              # MODE_INERTIAL
 		v_galaxy.append(anchor + local + TrailFrames.GAL_V * day)  # MODE_GALAXY
+		v_true.append(Units.to_display(nbary) + TrailFrames.GAL_V * day)  # MODE_TRUE
 		min_sep = minf(min_sep, nb.real_distance(0, bi))
 		sun_peak_kms = maxf(sun_peak_kms, Vector3(nb.vx[0], nb.vy[0], nb.vz[0]).length() * Units.KMS_PER_AUDAY)
 
@@ -59,6 +61,7 @@ func _ready() -> void:
 	print("    Neptune 'Sun-locked' view             : %.1f deg" % _peak_turn_deg(v_local))
 	print("    Neptune 'True motion' view            : %.1f deg" % _peak_turn_deg(v_inert))
 	print("    Neptune 'Galaxy' view                 : %.1f deg" % _peak_turn_deg(v_galaxy))
+	print("    Neptune 'Real space' view (MODE_TRUE)  : %.1f deg" % _peak_turn_deg(v_true))
 	var real := _peak_turn_deg(raw)
 	var gal := _peak_turn_deg(v_galaxy)
 	if gal > 2.0 * maxf(real, 1.0):

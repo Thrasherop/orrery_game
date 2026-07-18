@@ -9,6 +9,7 @@ const MODE_TIPS := [
 	"Nothing pinned: true paths through space. The Sun wobbles, and heavy newcomers swing whole orbits around the system's center of mass.",
 	"The Solar System never stands still — orbits stretch into helices as it drifts through the Milky Way.",
 	"Paths as seen from the selected body — watch the other planets trace looping retrograde curls, the way ancient astronomers saw them from Earth.",
+	"Honest spatial coordinates: every body drawn from its true position relative to the system's center of mass. The Sun wobbles as its own body and no swerve is stamped onto anything else — at the cost of a fisheye stretch for tight clusters far from the center.",
 ]
 
 var sim: Simulation

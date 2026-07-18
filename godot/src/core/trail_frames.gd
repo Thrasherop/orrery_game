@@ -14,9 +14,9 @@ class_name TrailFrames
 ## (the bug that motivated this system: absolute-space trails got orphaned
 ## whenever a heavy newcomer dragged the sun/barycenter frame around).
 
-enum { MODE_LOCAL, MODE_INERTIAL, MODE_GALAXY, MODE_FOCUS }
+enum { MODE_LOCAL, MODE_INERTIAL, MODE_GALAXY, MODE_FOCUS, MODE_TRUE }
 
-const MODE_NAMES := ["Sun-locked", "True motion", "Galaxy", "Focus"]
+const MODE_NAMES := ["Sun-locked", "True motion", "Galaxy", "Focus", "Real space"]
 
 ## Display-space drift of the whole solar system through the galaxy
 ## (galaxy mode only). Direction is tilted out of the ecliptic toward the
@@ -38,8 +38,11 @@ static var focus: SimBody = null
 ## Vertex for a sample being pushed live. `focus_abs` is the focus body's
 ## absolute display position at the sample time — only read in MODE_FOCUS,
 ## and supplied by the caller because only the simulation knows the exact
-## in-substep position (SimBody.display_pos can be a frame stale).
-static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vector3) -> Vector3:
+## in-substep position (SimBody.display_pos can be a frame stale). `bary` is the
+## body's raw barycentric offset in AU (position − barycenter) at the sample
+## time — only read in MODE_TRUE, where it's compressed on its own so the trail
+## shows the honest single-compression path with no sun-anchoring artifact.
+static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vector3, bary := Vector3.ZERO) -> Vector3:
 	match mode:
 		MODE_LOCAL:
 			return local
@@ -47,16 +50,18 @@ static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vecto
 			return anchor + local + GAL_V * day
 		MODE_FOCUS:
 			return anchor + local - focus_abs
+		MODE_TRUE:
+			return Units.to_display(bary) + GAL_V * day
 		_:
 			return anchor + local
 
 
 ## Vertex for a historical sample (mode-switch rebuild): MODE_FOCUS
 ## reconstructs the focus body's past position from its own trail history.
-static func vertex_hist(day: float, local: Vector3, anchor: Vector3) -> Vector3:
+static func vertex_hist(day: float, local: Vector3, anchor: Vector3, bary := Vector3.ZERO) -> Vector3:
 	if mode == MODE_FOCUS:
 		return anchor + local - focus_abs_at(day)
-	return vertex(day, local, anchor, Vector3.ZERO)
+	return vertex(day, local, anchor, Vector3.ZERO, bary)
 
 
 ## Where a body's TrailView sits this frame (mesh vertices are relative to it).
@@ -66,7 +71,7 @@ static func anchor_now(b: SimBody, sun: SimBody, now_day: float) -> Vector3:
 			if b.is_moon and b.host != null:
 				return b.host.display_pos
 			return sun.display_pos
-		MODE_GALAXY:
+		MODE_GALAXY, MODE_TRUE:
 			return -GAL_V * now_day
 		MODE_FOCUS:
 			return focus.display_pos if focus != null else sun.display_pos

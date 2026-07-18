@@ -37,6 +37,12 @@ func _ready() -> void:
 	await get_tree().create_timer(3.0).timeout
 	await _shot("res://tests/trail_3_galaxy_helix.png")
 
+	# real-space (barycentric): the twin suns swing around the barycenter as
+	# separate bodies and outer planets draw smooth arcs — no sun-anchored kink
+	Events.set_trail_mode(TrailFrames.MODE_TRUE)
+	await get_tree().create_timer(3.0).timeout
+	await _shot("res://tests/trail_3b_real_space.png")
+
 	# focus frame on Earth: other planets should trace loops around it
 	var earth: SimBody = null
 	for b in sim.planets:
