@@ -34,6 +34,27 @@ cmake --build build-cmake -j
 Produces `../bin/liborrery_native.dll` (loaded via `../bin/orrery_native.gdextension`).
 The MinGW runtime is statically linked in (`-static`) so the dll is self-contained.
 
+## Build — Android GDExtension (NDK)
+
+`scripts/build-android.ps1` does this + exports the APK. It needs the Android
+NDK (finds it via `$env:ANDROID_NDK_HOME` or the SDK's `ndk/` dir) and the
+godot-cpp checkout. Manual arm64 build:
+
+```sh
+NDK=/path/to/android-ndk
+cmake -S . -B build-android-arm64-v8a -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 -DANDROID_STL=c++_static \
+  -DCMAKE_BUILD_TYPE=Release -DORRERY_OUTPUT_NAME=orrery_native.android.arm64-v8a
+cmake --build build-android-arm64-v8a -j
+```
+
+Produces `../bin/liborrery_native.android.arm64-v8a.so` (static libc++, deps
+only libc/libm/libdl). The `android.*.arm64` entries in
+`../bin/orrery_native.gdextension` point at it; Godot packs it into the APK's
+`lib/arm64-v8a/`. For more ABIs, repeat with `-DANDROID_ABI=armeabi-v7a`
+(arch tag `arm32`) / `x86_64` and add matching `.gdextension` entries.
+
 ## Build — web WASM (Emscripten)
 
 Any recent emsdk works (the module is independent of Godot's own runtime).
