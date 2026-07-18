@@ -16,7 +16,23 @@ class_name TrailFrames
 
 enum { MODE_LOCAL, MODE_INERTIAL, MODE_GALAXY, MODE_FOCUS, MODE_TRUE }
 
-const MODE_NAMES := ["Sun-locked", "True motion", "Galaxy", "Focus", "Real space"]
+## Note the names don't match the enum tags 1:1 — the enum is historical, the
+## labels were re-chosen for what each frame actually references:
+##   MODE_LOCAL    "Sun-locked"       — Sun held fixed (heliocentric)
+##   MODE_INERTIAL "Barycentric"      — center of mass fixed, sun-anchored build
+##   MODE_GALAXY   "True Barycentric" — same + galactic drift (helices)
+##   MODE_FOCUS    "Focus"            — the selected body held fixed
+##   MODE_TRUE     "True motion"      — honest center-of-mass positions + drift
+const MODE_NAMES := ["Sun-locked", "Barycentric", "True Barycentric", "Focus", "True motion"]
+
+## Primary frames — the intuitive everyday views, shown up front and cycled by
+## the P key. The advanced barycentric-construction frames (Barycentric /
+## True Barycentric) live behind the settings "Advanced" disclosure: they share
+## the sun-anchored construction that stamps the Sun's own wobble onto every
+## path, so with a heavy newcomer they read as zig-zag nonsense unless you know
+## exactly what they are.
+const MODE_PRIMARY := [MODE_LOCAL, MODE_TRUE, MODE_FOCUS]
+const MODE_ADVANCED := [MODE_INERTIAL, MODE_GALAXY]
 
 ## Display-space drift of the whole solar system through the galaxy
 ## (galaxy mode only). Direction is tilted out of the ecliptic toward the
@@ -33,6 +49,14 @@ static var mode: int = MODE_LOCAL
 ## Reference body for MODE_FOCUS (kept non-null by Simulation: the selected
 ## body, falling back to the sun).
 static var focus: SimBody = null
+
+
+## Cycle key (P) steps only through the primary frames; the advanced barycentric
+## frames are reachable from the settings submenu. From an advanced frame this
+## lands on the first primary, pulling the user back to a legible view.
+static func next_primary_mode() -> int:
+	var i: int = MODE_PRIMARY.find(mode)
+	return MODE_PRIMARY[(i + 1) % MODE_PRIMARY.size()]
 
 
 ## Vertex for a sample being pushed live. `focus_abs` is the focus body's

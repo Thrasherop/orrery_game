@@ -4,12 +4,19 @@ extends CanvasLayer
 ## the display toggles and the G slider (moved here from the time dock — speed
 ## stays in the dock). Code-built like every other panel.
 
+# Indexed by TrailFrames enum (MODE_LOCAL, MODE_INERTIAL, MODE_GALAXY,
+# MODE_FOCUS, MODE_TRUE) — NOT display order. See TrailFrames.MODE_NAMES.
 const MODE_TIPS := [
-	"Paths pinned to the Sun (moons: to their planet) — clean orbit rings. If a path still wiggles, that's the Sun itself being tugged around by something heavy; the planet isn't really swerving.",
-	"Nothing pinned: true paths through space. The Sun wobbles, and heavy newcomers swing whole orbits around the system's center of mass.",
-	"The Solar System never stands still — orbits stretch into helices as it drifts through the Milky Way.",
-	"Paths as seen from the selected body — watch the other planets trace looping retrograde curls, the way ancient astronomers saw them from Earth.",
-	"Honest spatial coordinates: every body drawn from its true position relative to the system's center of mass. The Sun wobbles as its own body and no swerve is stamped onto anything else — at the cost of a fisheye stretch for tight clusters far from the center.",
+	# MODE_LOCAL — "Sun-locked"
+	"Reference frame: the Sun, held still — the classic orrery view. Planets trace clean orbit rings (moons ring their planet). If a ring still wiggles, that's the Sun being physically tugged by something heavy, not the planet swerving.",
+	# MODE_INERTIAL — "Barycentric" (advanced)
+	"Advanced. Reference frame: the system's center of mass, held still. Orbits keep their crisp shape, but the Sun's own wobble is baked into every path — so a heavy newcomer makes distant trails zig-zag into nonsense. Use \"True motion\" for the honest version.",
+	# MODE_GALAXY — "True Barycentric" (advanced)
+	"Advanced. The Barycentric view plus the Solar System's drift through the Milky Way, stretching orbits into long helices. Built the same sun-anchored way, so heavy newcomers still smear distant paths into zig-zags.",
+	# MODE_FOCUS — "Focus"
+	"Reference frame: the body you've selected, held still. The other planets trace looping retrograde curls around it — the way ancient astronomers watched the planets wander from Earth.",
+	# MODE_TRUE — "True motion"
+	"Reference frame: the system's center of mass, with every body drawn at its exact position (plus a gentle galactic drift). The honest \"how it really moves\" view — the Sun wobbles as its own body and no swerve is stamped onto anything else. Tight clusters far from the center get a fisheye stretch; that's inherent, not a bug.",
 ]
 
 var sim: Simulation
@@ -21,7 +28,9 @@ var _lock_note: Label
 var _orbits_btn: Button
 var _labels_btn: Button
 var _vectors_btn: Button
-var _mode_btns: Array = []   # Button per TrailFrames mode
+var _mode_btns := {}         # TrailFrames mode int -> Button (primary + advanced)
+var _adv_toggle: Button      # "Advanced" disclosure for the barycentric frames
+var _adv_row: HBoxContainer  # holds the advanced-frame chips (hidden by default)
 var _mode_desc: Label
 var _g_slider: HSlider
 var _g_label: Label
@@ -111,14 +120,24 @@ func setup(sim_: Simulation) -> void:
 	# --- Path frame ---------------------------------------------------------
 	box.add_child(_spacer())
 	box.add_child(UITheme.make_key_label("Path frame"))
+	# primary frames — the intuitive everyday views
 	var modes := HBoxContainer.new()
 	modes.add_theme_constant_override("separation", 6)
 	box.add_child(modes)
-	for m in TrailFrames.MODE_NAMES.size():
-		var btn := _toggle_btn(TrailFrames.MODE_NAMES[m], MODE_TIPS[m],
-			func() -> void: Events.set_trail_mode(m))
-		modes.add_child(btn)
-		_mode_btns.append(btn)
+	for m in TrailFrames.MODE_PRIMARY:
+		modes.add_child(_make_mode_chip(m))
+	# advanced frames — barycentric constructions that read as nonsense unless
+	# you know what they are; tucked behind a disclosure toggle
+	_adv_toggle = _toggle_btn("Advanced ⋯",
+		"Barycentric-construction frames — technical views the everyday modes replace",
+		func() -> void: _set_advanced(not _adv_row.visible))
+	box.add_child(_adv_toggle)
+	_adv_row = HBoxContainer.new()
+	_adv_row.add_theme_constant_override("separation", 6)
+	_adv_row.visible = false
+	box.add_child(_adv_row)
+	for m in TrailFrames.MODE_ADVANCED:
+		_adv_row.add_child(_make_mode_chip(m))
 	_mode_desc = UITheme.make_label("", 10, UITheme.MUTED)
 	_mode_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_mode_desc)
@@ -192,6 +211,20 @@ func _toggle_btn(text: String, tip: String, action: Callable) -> Button:
 	return b
 
 
+## a path-frame chip wired to select that TrailFrames mode, registered in
+## _mode_btns by mode int (display order is decoupled from the enum)
+func _make_mode_chip(m: int) -> Button:
+	var btn := _toggle_btn(TrailFrames.MODE_NAMES[m], MODE_TIPS[m],
+		func() -> void: Events.set_trail_mode(m))
+	_mode_btns[m] = btn
+	return btn
+
+
+func _set_advanced(open: bool) -> void:
+	_adv_row.visible = open
+	UITheme.set_chip_active(_adv_toggle, open)
+
+
 func open_panel() -> void:
 	_refresh()
 	visible = true
@@ -225,8 +258,12 @@ func _refresh_toggles() -> void:
 	UITheme.set_chip_active(_orbits_btn, Events.show_orbits)
 	UITheme.set_chip_active(_labels_btn, Events.show_labels)
 	UITheme.set_chip_active(_vectors_btn, Events.show_vectors)
-	for m in _mode_btns.size():
+	for m in _mode_btns:
 		UITheme.set_chip_active(_mode_btns[m], TrailFrames.mode == m)
+	# keep the active frame visible: auto-open the Advanced row when an advanced
+	# frame is selected (e.g. restored from a save or set via the P key)
+	if TrailFrames.mode in TrailFrames.MODE_ADVANCED and not _adv_row.visible:
+		_set_advanced(true)
 	_mode_desc.text = MODE_TIPS[TrailFrames.mode]
 
 

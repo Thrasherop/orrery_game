@@ -212,7 +212,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_V:
 			Events.set_show_vectors(not Events.show_vectors)
 		KEY_P:
-			var next := (TrailFrames.mode + 1) % TrailFrames.MODE_NAMES.size()
+			var next := TrailFrames.next_primary_mode()
 			Events.set_trail_mode(next)
 			Events.toast_requested.emit("Path frame: %s" % TrailFrames.MODE_NAMES[next])
 		KEY_ESCAPE:
