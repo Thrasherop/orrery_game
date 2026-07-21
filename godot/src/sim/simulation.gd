@@ -76,6 +76,10 @@ var custom_count := 0
 # Compiled-kernel backend (created lazily; null-safe — ready() gates use).
 var _kernel: NativeKernel = null
 
+# a toggle handler rebuilt trails this frame with stale display positions —
+# rebuild again at the end of the next tick (see _finish_tick_trails)
+var _trails_dirty := false
+
 
 func _init() -> void:
 	if USE_NATIVE:
@@ -95,11 +99,15 @@ func _init() -> void:
 	# samples are frame-independent, so a switch never resets anything)
 	TrailFrames.focus = sun
 	TrailFrames.sun_body = sun
-	Events.trail_mode_changed.connect(func(_m: int) -> void: _rebuild_trail_verts())
+	# Toggle handlers rebuild immediately (callers may read verts right away)
+	# but run mid-input, before this tick's display positions reflect the new
+	# state — body_abs_at reads live display_pos, so mark the trails dirty
+	# and the end of the next tick rebuilds once more with fresh displays.
+	Events.trail_mode_changed.connect(func(_m: int) -> void: _rebuild_and_redo())
 	# real-scale / moon-frame toggles re-render every trail from raw samples —
 	# lossless in both directions, exactly like a frame-mode switch
-	Events.real_scale_changed.connect(func(_on: bool) -> void: _rebuild_trail_verts())
-	Events.moon_trail_frame_changed.connect(func(_on: bool) -> void: _rebuild_trail_verts())
+	Events.real_scale_changed.connect(func(_on: bool) -> void: _rebuild_and_redo())
+	Events.moon_trail_frame_changed.connect(func(_on: bool) -> void: _rebuild_and_redo())
 	Events.selection_changed.connect(_on_selection_for_trails)
 
 
@@ -297,6 +305,7 @@ func tick(dt: float) -> void:
 			_update_moon_hosts()
 			_apply_moon_display(dt, SimTime.sim_days(sim_ms))
 		_tick_railed(SimTime.sim_days(sim_ms))
+		_finish_tick_trails()
 	else:
 		for b: SimBody in planets:
 			var pa := Kepler.body_position_au(b.el, T)
@@ -321,6 +330,16 @@ func tick(dt: float) -> void:
 					b.trail_next_day += b.trail_interval
 		_tick_moons_kepler(days)
 		_tick_railed(days)
+		_finish_tick_trails()
+
+
+## a toggle handler rebuilt trails mid-input with last frame's display
+## positions — now that this tick has refreshed every display_pos, rebuild
+## once more so body_abs_at-based vertices reference the current state
+func _finish_tick_trails() -> void:
+	if _trails_dirty:
+		_trails_dirty = false
+		_rebuild_trail_verts()
 
 
 ## Kepler-mode moons: analytic circles around their home planet, on exactly
@@ -1402,3 +1421,10 @@ func _rebuild_trail_verts() -> void:
 	TrailFrames.drift_epoch = SimTime.sim_days(sim_ms)
 	for b in all_bodies():
 		b.trail_rebuild()
+
+
+## toggle-handler path: rebuild now (callers may read verts immediately) and
+## again at the end of the next tick, when display positions are current
+func _rebuild_and_redo() -> void:
+	_rebuild_trail_verts()
+	_trails_dirty = true

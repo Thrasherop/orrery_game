@@ -163,11 +163,15 @@ static func focus_abs_at(day: float) -> Vector3:
 
 ## A body's absolute display position at `day` — in the ACTIVE scale —
 ## interpolated from its own trail history (compressed: anchor + local ==
-## absolute by construction; real scale: bary maps linearly). Days outside
-## the recorded span clamp to the nearest sample, so trails that reach
+## absolute by construction; real scale: bary maps linearly). Days before
+## the recorded span clamp to the oldest sample, so trails that reach
 ## further back than the body's history degrade to a rigid (true-motion)
-## tail instead of garbage. Used for the FOCUS frame's reference body and
-## the moon-frame Sun-locked sun reconstruction.
+## tail instead of garbage. Days at/past the NEWEST sample return the LIVE
+## display position instead: the reference body may sample sparsely (the
+## sun: every 15 days), and clamping "now" onto a stale sample sheared the
+## newest trail section sideways — a wobbling sun left moon-frame vertices
+## off-path, bridged to the body by a right-angle head jut. Used for the
+## FOCUS frame's reference body and the moon-frame Sun-locked sun.
 static func body_abs_at(b: SimBody, day: float) -> Vector3:
 	if b == null:
 		return Vector3.ZERO
@@ -177,7 +181,7 @@ static func body_abs_at(b: SimBody, day: float) -> Vector3:
 	if day <= b.trail_days[0]:
 		return _sample_abs(b, 0)
 	if day >= b.trail_days[n - 1]:
-		return _sample_abs(b, n - 1)
+		return b.display_pos
 	var i := b.trail_days.bsearch(day)   # first index with days[i] >= day; 1..n-1 here
 	var d0 := b.trail_days[i - 1]
 	var d1 := b.trail_days[i]

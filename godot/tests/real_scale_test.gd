@@ -151,6 +151,14 @@ func _ready() -> void:
 				"moon-frame on: Sun-locked anchors the Moon's trail on the sun")
 			_check(_tip_on_body(mb, sim.sun, days) < 0.1,
 				"moon-frame on: Moon trail still ends on the body (off by %.4f)" % _tip_on_body(mb, sim.sun, days))
+			# the sun samples only every ~15 days — a moon vertex newer than
+			# the sun's newest sample must reference the LIVE sun, not a
+			# stale sample (the right-angle head-jut bug)
+			_check(TrailFrames.body_abs_at(sim.sun, days + 1.0) == sim.sun.display_pos,
+				"beyond-newest sun reference is the live position")
+			var nm := mb.trail_size()
+			_check((mb.trail_verts[nm - 1] + sim.sun.display_pos).distance_to(mb.trail_bary[nm - 1] * Units.REAL_AU) < 1e-5,
+				"moon-frame vertex = bary − live sun (no stale-sample shear)")
 			Events.set_moon_trail_frame(false)
 
 	# --- drift epoch: float32 jitter guard ------------------------------
