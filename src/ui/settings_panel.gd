@@ -20,6 +20,7 @@ const MODE_TIPS := [
 ]
 
 var sim: Simulation
+var _embedded := false   # content lives in a MobileSheet; no own overlay/modal
 
 var _moons_check: CheckButton
 var _fast_check: CheckButton
@@ -38,44 +39,55 @@ var _g_label: Label
 var _last_g := 1.0
 
 
-func setup(sim_: Simulation) -> void:
+## with embed_box (mobile) the content is built into that container — a
+## MobileSheet owns visibility/dismissal and this node is only the controller
+func setup(sim_: Simulation, embed_box: Control = null) -> void:
 	sim = sim_
-	layer = 4
-	visible = false
+	_embedded = embed_box != null
+	var box: VBoxContainer
 
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.5)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	dim.gui_input.connect(func(ev: InputEvent) -> void:
-		if ev is InputEventMouseButton and ev.pressed:
-			close_panel())
-	add_child(dim)
+	if _embedded:
+		box = VBoxContainer.new()
+		box.add_theme_constant_override("separation", 8)
+		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		embed_box.add_child(box)
+	else:
+		layer = 4
+		visible = false
 
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(center)
+		var dim := ColorRect.new()
+		dim.color = Color(0, 0, 0, 0.5)
+		dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+		dim.mouse_filter = Control.MOUSE_FILTER_STOP
+		dim.gui_input.connect(func(ev: InputEvent) -> void:
+			if ev is InputEventMouseButton and ev.pressed:
+				close_panel())
+		add_child(dim)
 
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UITheme.panel_style())
-	center.add_child(panel)
+		var center := CenterContainer.new()
+		center.set_anchors_preset(Control.PRESET_FULL_RECT)
+		center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(center)
 
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
-	box.custom_minimum_size = Vector2(380 if UITheme.touch else 360, 0)
-	panel.add_child(box)
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", UITheme.panel_style())
+		center.add_child(panel)
 
-	var header := HBoxContainer.new()
-	box.add_child(header)
-	var title := UITheme.make_label("Settings", 15, UITheme.TEXT)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
-	var close := Button.new()
-	close.text = "✕"
-	UITheme.style_ghost(close)
-	close.pressed.connect(close_panel)
-	header.add_child(close)
+		box = VBoxContainer.new()
+		box.add_theme_constant_override("separation", 8)
+		box.custom_minimum_size = Vector2(380 if UITheme.touch else 360, 0)
+		panel.add_child(box)
+
+		var header := HBoxContainer.new()
+		box.add_child(header)
+		var title := UITheme.make_label("Settings", 15, UITheme.TEXT)
+		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		header.add_child(title)
+		var close := Button.new()
+		close.text = "✕"
+		UITheme.style_ghost(close)
+		close.pressed.connect(close_panel)
+		header.add_child(close)
 
 	# --- Moons ------------------------------------------------------------
 	box.add_child(UITheme.make_key_label("Moons"))
@@ -232,15 +244,17 @@ func _set_advanced(open: bool) -> void:
 
 func open_panel() -> void:
 	_refresh()
-	visible = true
+	if not _embedded:
+		visible = true
 
 
 func close_panel() -> void:
-	visible = false
+	if not _embedded:
+		visible = false
 
 
 func is_open() -> bool:
-	return visible
+	return visible and not _embedded
 
 
 func _refresh() -> void:
@@ -275,12 +289,12 @@ func _refresh_toggles() -> void:
 
 ## external G change while the panel is open (loading a save, reset)
 func update_live() -> void:
-	if visible and sim.g_scale != _last_g:
+	if (_embedded or visible) and sim.g_scale != _last_g:
 		_refresh()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if not visible:
+	if _embedded or not visible:
 		return
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:

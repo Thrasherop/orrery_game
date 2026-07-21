@@ -11,6 +11,10 @@ extends PanelContainer
 var sim: Simulation
 var host: SimBody = null   # null = sun-relative custom body
 
+## set BEFORE setup(): the panel drops its own chrome (panel style, height-cap
+## scroll) because a MobileSheet hosts it and provides both
+var embedded := false
+
 var title_label: Label
 var name_edit: LineEdit
 var mass_edit: LineEdit
@@ -34,13 +38,17 @@ var _scroll: ScrollContainer
 
 func setup(sim_: Simulation) -> void:
 	sim = sim_
-	add_theme_stylebox_override("panel", UITheme.panel_style())
-	custom_minimum_size = Vector2(288, 0)
+	if embedded:
+		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	else:
+		add_theme_stylebox_override("panel", UITheme.panel_style())
+		custom_minimum_size = Vector2(288, 0)
 	visible = false
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 7)
-	if UITheme.touch:
+	if UITheme.touch and not embedded:
 		# touch: the form scrolls inside a height cap so it never slides
 		# under the dock (see _update_size_cap); desktop fits as-is
 		_scroll = ScrollContainer.new()

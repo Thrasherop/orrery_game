@@ -8,7 +8,7 @@ const VIGNETTE_SHADER := preload("res://src/gfx/vignette.gdshader")
 var sim: Simulation
 var world: SolarSystemView
 var camera_rig: CameraRig
-var hud: Hud
+var hud   # Hud (desktop/web) or MobileHud (touch handhelds) — same update API
 var labels: LabelsLayer
 var _booted := false
 
@@ -46,7 +46,8 @@ func _ready() -> void:
 	add_child(labels)
 	labels.setup(sim, camera_rig)
 
-	hud = Hud.new()
+	# phones get a bottom-sheet paradigm; desktop keeps the edge-drawer layout
+	hud = MobileHud.new() if UX.handheld else Hud.new()
 	add_child(hud)
 	hud.setup(sim, camera_rig)
 
