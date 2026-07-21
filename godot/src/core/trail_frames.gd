@@ -67,6 +67,11 @@ static func next_primary_mode() -> int:
 ## time — only read in MODE_TRUE, where it's compressed on its own so the trail
 ## shows the honest single-compression path with no sun-anchoring artifact.
 static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vector3, bary := Vector3.ZERO) -> Vector3:
+	# Real-scale view: every frame collapses to the honest linear barycentric
+	# path — the stored local/anchor are compressed-frame values and can't be
+	# rescaled, but the raw bary sample maps 1:1 (same trick as MODE_TRUE).
+	if Units.real_scale:
+		return bary * Units.REAL_AU
 	match mode:
 		MODE_LOCAL:
 			return local
@@ -83,6 +88,8 @@ static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vecto
 ## Vertex for a historical sample (mode-switch rebuild): MODE_FOCUS
 ## reconstructs the focus body's past position from its own trail history.
 static func vertex_hist(day: float, local: Vector3, anchor: Vector3, bary := Vector3.ZERO) -> Vector3:
+	if Units.real_scale:
+		return bary * Units.REAL_AU
 	if mode == MODE_FOCUS:
 		return anchor + local - focus_abs_at(day)
 	return vertex(day, local, anchor, Vector3.ZERO, bary)
@@ -90,6 +97,8 @@ static func vertex_hist(day: float, local: Vector3, anchor: Vector3, bary := Vec
 
 ## Where a body's TrailView sits this frame (mesh vertices are relative to it).
 static func anchor_now(b: SimBody, sun: SimBody, now_day: float) -> Vector3:
+	if Units.real_scale:
+		return Vector3.ZERO   # vertices are absolute barycentric, no drift
 	match mode:
 		MODE_LOCAL:
 			if b.is_moon and b.host != null:
@@ -105,6 +114,8 @@ static func anchor_now(b: SimBody, sun: SimBody, now_day: float) -> Vector3:
 
 ## A frame can make a body's own trail degenerate (all zeros) — hide it.
 static func trail_visible(b: SimBody) -> bool:
+	if Units.real_scale:
+		return true   # absolute frame — no trail is degenerate
 	if mode == MODE_LOCAL:
 		return not b.is_sun
 	if mode == MODE_FOCUS:

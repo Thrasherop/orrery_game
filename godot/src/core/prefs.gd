@@ -21,6 +21,14 @@ static func set_trail_mode(m: int) -> void:
 	_write("display", "trail_mode", m)
 
 
+static func real_scale() -> bool:
+	return bool(_read("display", "real_scale", false))
+
+
+static func set_real_scale(on: bool) -> void:
+	_write("display", "real_scale", on)
+
+
 static func _read(section: String, key: String, fallback):
 	var cf := ConfigFile.new()
 	if cf.load(PATH) != OK:

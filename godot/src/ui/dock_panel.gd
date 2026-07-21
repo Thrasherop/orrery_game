@@ -1,6 +1,7 @@
 class_name DockPanel
 extends PanelContainer
-## Bottom time dock: play/pause, speed presets, log speed slider and "Now".
+## Bottom time dock: play/pause, speed presets, log speed slider and the
+## "Real scale" view toggle.
 ## (Display toggles and the G slider live in the Settings panel.)
 
 const PRESETS := [
@@ -14,9 +15,11 @@ var play_btn: Button
 var preset_btns: Array = []      # [Button, speed]
 var speed_slider: HSlider
 var speed_label: Label
+var scale_btn: Button
 
 var _last_speed := -1.0
 var _last_playing := true
+var _last_real := false
 
 
 func setup(sim_: Simulation) -> void:
@@ -81,12 +84,14 @@ func setup(sim_: Simulation) -> void:
 	if not UITheme.touch:
 		row.add_child(speed_col)
 
-	var now_btn := Button.new()
-	now_btn.text = "Now"
-	now_btn.tooltip_text = "Reset simulation to the current date"
-	UITheme.style_chip(now_btn, 11)
-	now_btn.pressed.connect(func() -> void: sim.reset_now())
-	row.add_child(now_btn)
+	scale_btn = Button.new()
+	scale_btn.text = "Real scale"
+	scale_btn.tooltip_text = "Show true distances and sizes — planets shrink to dots and only the orbits remain visible"
+	UITheme.style_chip(scale_btn, 11)
+	_last_real = Units.real_scale
+	UITheme.set_chip_active(scale_btn, _last_real)
+	scale_btn.pressed.connect(func() -> void: Events.set_real_scale(not Units.real_scale))
+	row.add_child(scale_btn)
 
 	if UITheme.touch:
 		row2.add_child(speed_col)
@@ -120,3 +125,6 @@ func update_live() -> void:
 		_refresh_speed_ui()
 	if sim.playing != _last_playing:
 		_refresh_play_icon()
+	if Units.real_scale != _last_real:
+		_last_real = Units.real_scale
+		UITheme.set_chip_active(scale_btn, _last_real)

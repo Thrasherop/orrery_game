@@ -74,6 +74,13 @@ func _sync_spherical(cam_pos: Vector3, tgt: Vector3) -> void:
 	dist_goal = dist
 
 
+## real-scale view: the whole inner system huddles near the origin, so the
+## zoom floor drops to let the camera get meaningfully close (near plane 0.1
+## still bounds it — planets are sub-pixel dots there by design)
+func _min_dist() -> float:
+	return 0.5 if Units.real_scale else MIN_DIST
+
+
 func _offset() -> Vector3:
 	return Vector3(cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw)) * dist
 
@@ -100,12 +107,12 @@ func handle_gui_input(event: InputEvent) -> void:
 	elif event is InputEventMagnifyGesture:
 		# macOS/web trackpad pinch
 		var mg := event as InputEventMagnifyGesture
-		dist_goal = clampf(dist_goal / maxf(mg.factor, 0.05), MIN_DIST, MAX_DIST)
+		dist_goal = clampf(dist_goal / maxf(mg.factor, 0.05), _min_dist(), MAX_DIST)
 	elif event is InputEventPanGesture:
 		# trackpad two-finger scroll → zoom, like the wheel
 		var pg := event as InputEventPanGesture
 		var f := clampf(1.0 + pg.delta.y * 0.02, 0.5, 2.0)
-		dist_goal = clampf(dist_goal * f, MIN_DIST, MAX_DIST)
+		dist_goal = clampf(dist_goal * f, _min_dist(), MAX_DIST)
 
 
 func _on_mouse_button(mb: InputEventMouseButton) -> void:
@@ -121,9 +128,9 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 	elif mb.button_index == MOUSE_BUTTON_RIGHT or mb.button_index == MOUSE_BUTTON_MIDDLE:
 		_panning = mb.pressed
 	elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-		dist_goal = clampf(dist_goal * 0.9, MIN_DIST, MAX_DIST)
+		dist_goal = clampf(dist_goal * 0.9, _min_dist(), MAX_DIST)
 	elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-		dist_goal = clampf(dist_goal * 1.111, MIN_DIST, MAX_DIST)
+		dist_goal = clampf(dist_goal * 1.111, _min_dist(), MAX_DIST)
 
 
 func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
@@ -159,7 +166,7 @@ func _on_touch_drag(sd: InputEventScreenDrag) -> void:
 		var other := _other_touch_center(sd.index)
 		var sep_old := maxf(prev.distance_to(other), 1.0)
 		var sep_new := maxf(sd.position.distance_to(other), 1.0)
-		dist_goal = clampf(dist_goal * sep_old / sep_new, MIN_DIST, MAX_DIST)
+		dist_goal = clampf(dist_goal * sep_old / sep_new, _min_dist(), MAX_DIST)
 		_pan((sd.position - prev) / float(_touches.size()))
 	else:
 		_moved += sd.relative.length()
@@ -235,7 +242,7 @@ func apply_view(tgt: Vector3, yaw_: float, pitch_: float, dist_: float) -> void:
 	yaw_goal = yaw_
 	pitch = pitch_
 	pitch_goal = pitch_
-	dist = clampf(dist_, MIN_DIST, MAX_DIST)
+	dist = clampf(dist_, _min_dist(), MAX_DIST)
 	dist_goal = dist
 	_apply_transform()
 

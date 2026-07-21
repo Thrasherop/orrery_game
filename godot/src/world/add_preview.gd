@@ -70,15 +70,16 @@ func _apply(cfg: Dictionary) -> void:
 	var ring_r: float
 	if host != null:
 		# moon placement: same linear amplification the moon will render with,
-		# so the wireframe sits exactly where the moon will appear
-		var k: float = MoonMath.add_disp_k(host.size, cfg.dist_au)
+		# so the wireframe sits exactly where the moon will appear (true offset
+		# in the real-scale view)
+		var k: float = Units.REAL_AU if Units.real_scale else MoonMath.add_disp_k(host.size, cfg.dist_au)
 		p = Vector3(st.p[0], st.p[1], st.p[2]) * k
 		_sphere.scale = Vector3.ONE * clampf(0.9 * pow(cfg.mass_e, 1.0 / 3.0), 0.12, 1.2)
 		ring_r = cfg.dist_au * k
 	else:
-		p = Units.to_display(Vector3(st.p[0], st.p[1], st.p[2]))
+		p = Units.render(Vector3(st.p[0], st.p[1], st.p[2]))
 		_sphere.scale = Vector3.ONE * clampf(0.9 * pow(cfg.mass_e, 1.0 / 3.0), 0.35, 3.4)
-		ring_r = Units.dist_scale(cfg.dist_au)
+		ring_r = Units.render_scale(cfg.dist_au)
 	# tilt the guide circle into the plane the orbit would actually lie in —
 	# spanned by the (anchor-relative) position and launch velocity — so it
 	# always passes through the injection point, whatever the latitude

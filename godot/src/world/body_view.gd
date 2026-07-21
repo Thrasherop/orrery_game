@@ -8,9 +8,20 @@ extends Node3D
 var body: SimBody
 var axis: Node3D                 # axial tilt carrier
 var mesh_inst: MeshInstance3D
-var moon_views: Array = []       # { mesh: MeshInstance3D, dist, period, phase }
+var moon_views: Array = []       # { mesh, dist, period, phase, size, a_au, radius_km }
 var star_glow: MeshInstance3D = null
 var _base_size := 1.0            # display radius the mesh was built with
+var _real_applied := false       # real-scale factor currently applied to the view
+
+
+## Display radius of a body in the real-scale view: true radius in AU, mapped
+## linearly. Custom bodies carry no catalog radius — estimate one at Earth
+## density from their mass.
+static func real_display_radius(radius_km: float, mass_e: float) -> float:
+	var rk := radius_km
+	if rk <= 0.0:
+		rk = 6371.0 * pow(maxf(mass_e, 0.001), 1.0 / 3.0)
+	return rk / Units.AU_KM * Units.REAL_AU
 
 
 ## decorative_moon_names: which of b.moons to render as kinematic pivots —
@@ -87,7 +98,9 @@ func setup(b: SimBody, textures: Dictionary, decorative_moon_names = null) -> vo
 		mmesh.material_override = mmat
 		pivot.add_child(mmesh)
 		add_child(pivot)
-		moon_views.append({ mesh = mmesh, dist = md.dist, period = md.period, phase = idx * 2.39996 })
+		moon_views.append({ mesh = mmesh, dist = md.dist, period = md.period, phase = idx * 2.39996,
+				size = moon_size, a_au = md.get("a_au", 0.0), radius_km = md.get("radius_km", 0.0) })
+	_apply_scale_mode()
 
 
 func _make_rings(textures: Dictionary) -> MeshInstance3D:
@@ -139,8 +152,28 @@ func _star_glow(size: float) -> MeshInstance3D:
 	return SunView.make_glow_sprite(mat, size * 8.0)
 
 
+## (Re)apply the active scale mode: at real scale the tilt carrier (sphere +
+## rings) shrinks to the body's true radius, decorative moons shrink to theirs,
+## and a custom star's glow keeps a small fixed footprint so it stays findable.
+func _apply_scale_mode() -> void:
+	_real_applied = Units.real_scale
+	var k := 1.0
+	if _real_applied:
+		k = real_display_radius(body.radius_km, body.mass_e) / _base_size
+	axis.scale = Vector3.ONE * k
+	if star_glow != null:
+		star_glow.scale = Vector3.ONE * (1.6 if _real_applied else _base_size * 8.0)
+	for mv in moon_views:
+		var mk := 1.0
+		if _real_applied and mv.size > 0.0:
+			mk = real_display_radius(mv.radius_km, 0.01) / mv.size
+		(mv.mesh as MeshInstance3D).scale = Vector3.ONE * mk
+
+
 func update_view(days: float, cam: Camera3D) -> void:
 	position = body.display_pos
+	if Units.real_scale != _real_applied:
+		_apply_scale_mode()
 	# merged bodies grow: keep the mesh in sync with the sim's size
 	if body.size != _base_size:
 		mesh_inst.scale = Vector3.ONE * (body.size / _base_size)
@@ -152,5 +185,7 @@ func update_view(days: float, cam: Camera3D) -> void:
 	for mv in moon_views:
 		var ang: float = (days / mv.period) * TAU + mv.phase   # negative period = retrograde
 		var mm: MeshInstance3D = mv.mesh
-		mm.position = Vector3(cos(ang) * mv.dist, 0, -sin(ang) * mv.dist)
+		# real scale: decorative moons orbit at their true distance
+		var d: float = (mv.a_au * Units.REAL_AU) if _real_applied else mv.dist
+		mm.position = Vector3(cos(ang) * d, 0, -sin(ang) * d)
 		mm.rotation.y = ang   # tidally locked

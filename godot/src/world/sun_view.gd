@@ -5,11 +5,19 @@ extends Node3D
 
 const GLOW_SHADER := preload("res://src/gfx/glow_billboard.gdshader")
 
+const GLOW_SCALE := 46.0
+const HALO_SCALE := 110.0
+# real-scale view: the disc shrinks to the sun's true radius; the glows drop
+# to a small fixed footprint so the sun still reads as a bright star-point
+const GLOW_SCALE_REAL := 1.5
+const HALO_SCALE_REAL := 3.2
+
 var body: SimBody
 var mesh_inst: MeshInstance3D
 var halo_mat: ShaderMaterial
 var glow_sprite: MeshInstance3D
 var halo_sprite: MeshInstance3D
+var _real_applied := false
 
 
 func setup(sun_body: SimBody) -> void:
@@ -33,14 +41,27 @@ func setup(sun_body: SimBody) -> void:
 	var glow_mat := make_glow_material(GLOW_SHADER,
 		TextureFactory.make_glow(Color(1, 235 / 255.0, 190 / 255.0, 1), Color(1, 150 / 255.0, 50 / 255.0, 0.35)),
 		Color.WHITE, 1.0)
-	glow_sprite = make_glow_sprite(glow_mat, 46.0)
+	glow_sprite = make_glow_sprite(glow_mat, GLOW_SCALE)
 	add_child(glow_sprite)
 
 	halo_mat = make_glow_material(GLOW_SHADER,
 		TextureFactory.make_glow(Color(1, 200 / 255.0, 120 / 255.0, 0.5), Color(1, 120 / 255.0, 40 / 255.0, 0.12)),
 		Color.WHITE, 0.55)
-	halo_sprite = make_glow_sprite(halo_mat, 110.0)
+	halo_sprite = make_glow_sprite(halo_mat, HALO_SCALE)
 	add_child(halo_sprite)
+	_apply_scale_mode()
+
+
+func _apply_scale_mode() -> void:
+	_real_applied = Units.real_scale
+	if _real_applied:
+		mesh_inst.scale = Vector3.ONE * ((body.radius_km / Units.AU_KM * Units.REAL_AU) / body.size)
+		glow_sprite.scale = Vector3.ONE * GLOW_SCALE_REAL
+		halo_sprite.scale = Vector3.ONE * HALO_SCALE_REAL
+	else:
+		mesh_inst.scale = Vector3.ONE
+		glow_sprite.scale = Vector3.ONE * GLOW_SCALE
+		halo_sprite.scale = Vector3.ONE * HALO_SCALE
 
 
 static func make_glow_material(shader: Shader, tex: Texture2D, tint: Color, opacity: float) -> ShaderMaterial:
@@ -66,6 +87,8 @@ static func make_glow_sprite(mat: ShaderMaterial, sprite_scale: float) -> MeshIn
 
 func update_view(days: float, cam: Camera3D) -> void:
 	position = body.display_pos
+	if Units.real_scale != _real_applied:
+		_apply_scale_mode()
 	mesh_inst.rotation.y = (days * 24.0 / body.day_hours) * TAU
 	# keep sun glow steady regardless of zoom
 	halo_mat.set_shader_parameter("opacity", clampf(0.65 - cam.global_position.length() / 2500.0, 0.15, 0.65))

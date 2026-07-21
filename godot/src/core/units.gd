@@ -23,6 +23,16 @@ const DIST_P := 0.62                 # display-distance compression
 # 0.08 AU minimum placement distance, so normal orbits are unaffected.
 const DIST_R0 := 0.02
 
+# Real-scale view: linear display units per AU, no compression, bodies at true
+# radii. 7.0 keeps Neptune's orbit at roughly the same on-screen radius as the
+# compressed view (26·30^0.62 ≈ 214 ≈ 7·30), so the whole system still fits
+# inside the camera's zoom range.
+const REAL_AU := 7.0
+## Authoritative flag for the real-scale view (set via Events.set_real_scale).
+## Only RENDERING reads it — physics/collision code must keep calling
+## dist_scale/to_display directly so gameplay never depends on the view.
+static var real_scale := false
+
 
 static func dist_scale(r_au: float) -> float:
 	if r_au <= 0.0:
@@ -38,3 +48,15 @@ static func to_display(v_au: Vector3) -> Vector3:
 	if r < 1e-9:
 		return Vector3.ZERO
 	return v_au * (dist_scale(r) / r)
+
+
+## Render-layer mapping: like dist_scale, but linear when the real-scale view
+## is active. Use for anything the user SEES; never for physics/collisions.
+static func render_scale(r_au: float) -> float:
+	return REAL_AU * r_au if real_scale else dist_scale(r_au)
+
+
+## Render-layer mapping: like to_display, but linear when the real-scale view
+## is active. Use for anything the user SEES; never for physics/collisions.
+static func render(v_au: Vector3) -> Vector3:
+	return v_au * REAL_AU if real_scale else to_display(v_au)
