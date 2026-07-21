@@ -60,3 +60,9 @@ static func render_scale(r_au: float) -> float:
 ## is active. Use for anything the user SEES; never for physics/collisions.
 static func render(v_au: Vector3) -> Vector3:
 	return v_au * REAL_AU if real_scale else to_display(v_au)
+
+
+## A bound moon's host-relative display offset: the catalog's exaggerated
+## amplification (disp_k) normally, the true linear offset at real scale.
+static func moon_offset(rel_au: Vector3, disp_k: float) -> Vector3:
+	return rel_au * (REAL_AU if real_scale else disp_k)

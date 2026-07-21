@@ -62,16 +62,13 @@ static func next_primary_mode() -> int:
 ## Vertex for a sample being pushed live. `focus_abs` is the focus body's
 ## absolute display position at the sample time — only read in MODE_FOCUS,
 ## and supplied by the caller because only the simulation knows the exact
-## in-substep position (SimBody.display_pos can be a frame stale). `bary` is the
-## body's raw barycentric offset in AU (position − barycenter) at the sample
-## time — only read in MODE_TRUE, where it's compressed on its own so the trail
-## shows the honest single-compression path with no sun-anchoring artifact.
-static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vector3, bary := Vector3.ZERO) -> Vector3:
-	# Real-scale view: every frame collapses to the honest linear barycentric
-	# path — the stored local/anchor are compressed-frame values and can't be
-	# rescaled, but the raw bary sample maps 1:1 (same trick as MODE_TRUE).
+## in-substep position (SimBody.display_pos can be a frame stale). `bary` is
+## the body's raw barycentric offset in AU (position − barycenter) at the
+## sample time; `rel` its raw offset from its anchor body (the sun, or a
+## moon's host). The raw pair drives MODE_TRUE and the whole real-scale view.
+static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vector3, bary := Vector3.ZERO, rel := Vector3.ZERO) -> Vector3:
 	if Units.real_scale:
-		return bary * Units.REAL_AU
+		return _vertex_real(day, rel, bary, focus_abs)
 	match mode:
 		MODE_LOCAL:
 			return local
@@ -85,20 +82,37 @@ static func vertex(day: float, local: Vector3, anchor: Vector3, focus_abs: Vecto
 			return anchor + local
 
 
+## Real-scale vertex: the linear mapping is additive, so every frame is exact
+## from the raw samples — rel gives the sun/host-locked view, bary the
+## barycentric ones. Note "Barycentric" and "True motion" coincide here up to
+## the galactic drift: their constructions only differ under nonlinear
+## compression (the sun-anchoring artifact MODE_TRUE exists to avoid).
+static func _vertex_real(day: float, rel: Vector3, bary: Vector3, focus_abs: Vector3) -> Vector3:
+	match mode:
+		MODE_LOCAL:
+			return rel * Units.REAL_AU
+		MODE_INERTIAL:
+			return bary * Units.REAL_AU
+		MODE_FOCUS:
+			return bary * Units.REAL_AU - focus_abs
+		_:   # MODE_GALAXY / MODE_TRUE: honest barycentric + galactic drift
+			return bary * Units.REAL_AU + GAL_V * day
+
+
 ## Vertex for a historical sample (mode-switch rebuild): MODE_FOCUS
 ## reconstructs the focus body's past position from its own trail history.
-static func vertex_hist(day: float, local: Vector3, anchor: Vector3, bary := Vector3.ZERO) -> Vector3:
-	if Units.real_scale:
-		return bary * Units.REAL_AU
+static func vertex_hist(day: float, local: Vector3, anchor: Vector3, bary := Vector3.ZERO, rel := Vector3.ZERO) -> Vector3:
 	if mode == MODE_FOCUS:
+		if Units.real_scale:
+			return bary * Units.REAL_AU - focus_abs_at(day)
 		return anchor + local - focus_abs_at(day)
-	return vertex(day, local, anchor, Vector3.ZERO, bary)
+	return vertex(day, local, anchor, Vector3.ZERO, bary, rel)
 
 
 ## Where a body's TrailView sits this frame (mesh vertices are relative to it).
+## Scale-independent: every case reads live display positions (already in the
+## active scale) or the drift term, so the real-scale view needs no branch.
 static func anchor_now(b: SimBody, sun: SimBody, now_day: float) -> Vector3:
-	if Units.real_scale:
-		return Vector3.ZERO   # vertices are absolute barycentric, no drift
 	match mode:
 		MODE_LOCAL:
 			if b.is_moon and b.host != null:
@@ -114,8 +128,6 @@ static func anchor_now(b: SimBody, sun: SimBody, now_day: float) -> Vector3:
 
 ## A frame can make a body's own trail degenerate (all zeros) — hide it.
 static func trail_visible(b: SimBody) -> bool:
-	if Units.real_scale:
-		return true   # absolute frame — no trail is degenerate
 	if mode == MODE_LOCAL:
 		return not b.is_sun
 	if mode == MODE_FOCUS:
@@ -123,11 +135,12 @@ static func trail_visible(b: SimBody) -> bool:
 	return true
 
 
-## The focus body's absolute display position at `day`, interpolated from its
-## own trail history (anchor + local == absolute by construction). Days
-## outside the recorded span clamp to the nearest sample, so trails that
-## reach further back than the focus body's history degrade to a rigid
-## (true-motion) tail instead of garbage.
+## The focus body's absolute display position at `day` — in the ACTIVE scale —
+## interpolated from its own trail history (compressed: anchor + local ==
+## absolute by construction; real scale: bary maps linearly). Days outside the
+## recorded span clamp to the nearest sample, so trails that reach further
+## back than the focus body's history degrade to a rigid (true-motion) tail
+## instead of garbage.
 static func focus_abs_at(day: float) -> Vector3:
 	var f := focus
 	if f == null:
@@ -136,13 +149,17 @@ static func focus_abs_at(day: float) -> Vector3:
 	if n == 0:
 		return f.display_pos
 	if day <= f.trail_days[0]:
-		return f.trail_anchor[0] + f.trail_local[0]
+		return _focus_sample_abs(f, 0)
 	if day >= f.trail_days[n - 1]:
-		return f.trail_anchor[n - 1] + f.trail_local[n - 1]
+		return _focus_sample_abs(f, n - 1)
 	var i := f.trail_days.bsearch(day)   # first index with days[i] >= day; 1..n-1 here
 	var d0 := f.trail_days[i - 1]
 	var d1 := f.trail_days[i]
 	var t := 0.0 if d1 <= d0 else (day - d0) / (d1 - d0)
-	var a := f.trail_anchor[i - 1] + f.trail_local[i - 1]
-	var b := f.trail_anchor[i] + f.trail_local[i]
-	return a.lerp(b, t)
+	return _focus_sample_abs(f, i - 1).lerp(_focus_sample_abs(f, i), t)
+
+
+static func _focus_sample_abs(f: SimBody, i: int) -> Vector3:
+	if Units.real_scale:
+		return f.trail_bary[i] * Units.REAL_AU
+	return f.trail_anchor[i] + f.trail_local[i]

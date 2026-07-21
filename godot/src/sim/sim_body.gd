@@ -75,7 +75,8 @@ var vel_display := Vector3.ZERO   # raw velocity (scene axes) — drives custom 
 var trail_days := PackedFloat64Array()
 var trail_local := PackedVector3Array()
 var trail_anchor := PackedVector3Array()
-var trail_bary := PackedVector3Array()    # raw barycentric offset, AU (MODE_TRUE)
+var trail_bary := PackedVector3Array()    # raw barycentric offset, AU (MODE_TRUE + real scale)
+var trail_rel := PackedVector3Array()     # raw anchor-relative offset, AU (real-scale frames)
 var trail_verts := PackedVector3Array()
 var trail_max := 0
 var trail_next_day := -INF
@@ -111,21 +112,24 @@ func init_trail(max_pts: int, opacity: float) -> void:
 
 
 ## append one sample. `focus_abs` is only meaningful in MODE_FOCUS (the focus
-## body's absolute display position at `day`) — pass ZERO otherwise. `bary` is
-## the body's raw barycentric offset in AU (position − barycenter), only read in
-## MODE_TRUE — pass ZERO for anything that can't render a meaningful one.
-func trail_push(day: float, local: Vector3, anchor: Vector3, focus_abs := Vector3.ZERO, bary := Vector3.ZERO) -> void:
+## body's absolute display position at `day`, in the active scale) — pass ZERO
+## otherwise. `bary` is the body's raw barycentric offset in AU (position −
+## barycenter); `rel` its raw offset from its anchor body (the sun, or a
+## moon's host). The raw pair renders MODE_TRUE and every real-scale frame.
+func trail_push(day: float, local: Vector3, anchor: Vector3, focus_abs := Vector3.ZERO, bary := Vector3.ZERO, rel := Vector3.ZERO) -> void:
 	if trail_days.size() >= trail_max:
 		trail_days.remove_at(0)
 		trail_local.remove_at(0)
 		trail_anchor.remove_at(0)
 		trail_bary.remove_at(0)
+		trail_rel.remove_at(0)
 		trail_verts.remove_at(0)
 	trail_days.append(day)
 	trail_local.append(local)
 	trail_anchor.append(anchor)
 	trail_bary.append(bary)
-	trail_verts.append(TrailFrames.vertex(day, local, anchor, focus_abs, bary))
+	trail_rel.append(rel)
+	trail_verts.append(TrailFrames.vertex(day, local, anchor, focus_abs, bary, rel))
 	trail_version += 1
 
 
@@ -138,7 +142,7 @@ func trail_size() -> int:
 func trail_rebuild() -> void:
 	var n := trail_days.size()
 	for i in n:
-		trail_verts[i] = TrailFrames.vertex_hist(trail_days[i], trail_local[i], trail_anchor[i], trail_bary[i])
+		trail_verts[i] = TrailFrames.vertex_hist(trail_days[i], trail_local[i], trail_anchor[i], trail_bary[i], trail_rel[i])
 	trail_version += 1
 
 
@@ -147,6 +151,7 @@ func trail_clear() -> void:
 	trail_local.clear()
 	trail_anchor.clear()
 	trail_bary.clear()
+	trail_rel.clear()
 	trail_verts.clear()
 	trail_next_day = -INF
 	trail_lv_ok = false

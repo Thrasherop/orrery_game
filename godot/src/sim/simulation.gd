@@ -280,15 +280,12 @@ func tick(dt: float) -> void:
 				if b.custom:
 					# arrow shows on-screen (barycentric) motion
 					b.vel_display = Vector3(nb.vx[i], nb.vy[i], nb.vz[i])
-			# Real-space frame: re-place bodies at their honest single-
-			# compression barycentric positions (before moons, so a moon's
-			# host-anchored display rides the true-space host). Overwrites
+			# Real-space frame / real-scale view: re-place bodies at their
+			# honest barycentric positions (before moons, so a moon's
+			# host-anchored display rides the barycentric host). Overwrites
 			# display_pos; nb.disp stays sun-anchored for collisions.
-			# Real-scale view supersedes it: same overwrite, linear mapping.
-			if Units.real_scale:
-				_apply_real_scale_display()
-			elif TrailFrames.mode == TrailFrames.MODE_TRUE:
-				_apply_true_space_display()
+			if Units.real_scale or TrailFrames.mode == TrailFrames.MODE_TRUE:
+				_apply_barycentric_display()
 			_update_moon_hosts()
 			_apply_moon_display(dt, SimTime.sim_days(sim_ms))
 		_tick_railed(SimTime.sim_days(sim_ms))
@@ -308,8 +305,11 @@ func tick(dt: float) -> void:
 			else:
 				while days >= b.trail_next_day:
 					var s := Kepler.body_position_au(b.el, SimTime.day_to_t(b.trail_next_day))
-					b.trail_push(b.trail_next_day, Units.to_display(Vector3(s[0], s[1], s[2])),
-							Vector3.ZERO, _focus_abs_kepler(b.trail_next_day), Vector3(s[0], s[1], s[2]))
+					# in Kepler mode the sun rests at the barycenter, so the
+					# heliocentric position doubles as bary AND rel
+					var s_au := Vector3(s[0], s[1], s[2])
+					b.trail_push(b.trail_next_day, Units.to_display(s_au),
+							Vector3.ZERO, _focus_abs_kepler(b.trail_next_day), s_au, s_au)
 					b.trail_next_day += b.trail_interval
 		_tick_moons_kepler(days)
 		_tick_railed(days)
@@ -329,7 +329,7 @@ func _tick_moons_kepler(days: float) -> void:
 		var st := MoonMath.rel_state(mb.a_au, mb.incl_deg, mb.phase0 + om * days, om)
 		var rel := Vector3(st.p[0], st.p[1], st.p[2])
 		mb.pos_au = host.pos_au + rel
-		mb.display_pos = host.display_pos + rel * (Units.REAL_AU if Units.real_scale else mb.disp_k)
+		mb.display_pos = host.display_pos + Units.moon_offset(rel, mb.disp_k)
 		mb.r_au = mb.pos_au.length()
 		var hv := Kepler.state_vector(host.el, SimTime.day_to_t(days))
 		mb.vel_kms = Vector3(hv.v[0] + st.v[0], hv.v[1] + st.v[1], hv.v[2] + st.v[2]).length() * Units.KMS_PER_AUDAY
@@ -343,9 +343,10 @@ func _tick_moons_kepler(days: float) -> void:
 			var day_s := mb.trail_next_day
 			var hp := Kepler.body_position_au(host.el, SimTime.day_to_t(day_s))
 			var ms := MoonMath.rel_state(mb.a_au, mb.incl_deg, mb.phase0 + om * day_s, om)
-			mb.trail_push(day_s, Vector3(ms.p[0], ms.p[1], ms.p[2]) * mb.disp_k,
+			var ms_au := Vector3(ms.p[0], ms.p[1], ms.p[2])
+			mb.trail_push(day_s, ms_au * mb.disp_k,
 					Units.to_display(Vector3(hp[0], hp[1], hp[2])), _focus_abs_kepler(day_s),
-					Vector3(hp[0] + ms.p[0], hp[1] + ms.p[1], hp[2] + ms.p[2]))
+					Vector3(hp[0], hp[1], hp[2]) + ms_au, ms_au)
 			mb.trail_next_day += mb.trail_interval
 
 
@@ -485,29 +486,24 @@ func _drive_railed(b: SimBody, days: float) -> void:
 	var a_disp := anchor.display_pos
 	if Units.real_scale:
 		a_disp = _canon_display(anchor)
-	var helio: Vector3
-	if b.is_moon and b.host != null:
-		helio = a_disp + rel * b.disp_k
-	else:
-		helio = a_disp + Units.to_display(rel)
+	var local := rel * b.disp_k if (b.is_moon and b.host != null) else Units.to_display(rel)
 	# raw barycentric offset (AU) for the Real-space frame: the anchor's own
 	# offset plus this body's anchor-relative rel
 	var bary := _bary_offset_of(anchor) + rel
-	b.display_pos = helio
-	# Real-space renders the body at its single-compression barycentric position
-	# so its trail ends exactly on it; moons stay host-anchored (secondary).
-	if Units.real_scale:
-		if b.is_moon and b.host != null:
-			b.display_pos = anchor.display_pos + rel * Units.REAL_AU
-		else:
-			b.display_pos = bary * Units.REAL_AU
-	elif TrailFrames.mode == TrailFrames.MODE_TRUE and not (b.is_moon and b.host != null):
+	if b.is_moon and b.host != null:
+		# bound moons ride their host in either scale (exaggerated / true offset)
+		b.display_pos = anchor.display_pos + Units.moon_offset(rel, b.disp_k)
+	elif Units.real_scale:
+		b.display_pos = bary * Units.REAL_AU
+	elif TrailFrames.mode == TrailFrames.MODE_TRUE:
 		b.display_pos = Units.to_display(bary)
+	else:
+		b.display_pos = a_disp + local
 	if days >= b.trail_next_day:
 		var fa := Vector3.ZERO
 		if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
 			fa = TrailFrames.focus.display_pos
-		b.trail_push(days, helio - a_disp, a_disp, fa, bary)
+		b.trail_push(days, local, a_disp, fa, bary, rel)
 		b.trail_next_day = days + b.trail_interval
 
 
@@ -529,33 +525,19 @@ func _bary_offset_of(b: SimBody) -> Vector3:
 	return b.pos_au
 
 
-## Real-space (MODE_TRUE) render pass: overwrite each non-moon body's
-## display_pos with its honest single-compression barycentric position, so a
-## trail (built from the same compression) ends exactly on its body. nb.disp
-## stays sun-anchored for collisions; this touches render positions only.
-func _apply_true_space_display() -> void:
+## Honest-barycentric render pass, shared by the Real-space frame (MODE_TRUE,
+## single compression) and the real-scale view (linear) — Units.render picks
+## the mapping. Overwrites each non-moon body's display_pos so a trail built
+## from the same mapping ends exactly on its body. nb.disp stays sun-anchored
+## for collisions; this touches render positions only.
+func _apply_barycentric_display() -> void:
 	var bary := nb.barycenter()
-	sun.display_pos = Units.to_display(nb.bary_offset_au(0, bary))
+	sun.display_pos = Units.render(nb.bary_offset_au(0, bary))
 	for i in range(1, nb.count()):
 		var b: SimBody = nb.bodies[i]
 		if b.is_moon:
 			continue
-		b.display_pos = Units.to_display(nb.bary_offset_au(i, bary))
-
-
-## Real-scale render pass: overwrite each non-moon body's display_pos with its
-## LINEAR barycentric position (Units.REAL_AU per AU) — the honest view where
-## planets shrink to dots and only the orbits remain. Same contract as
-## _apply_true_space_display: render positions only, nb.disp stays sun-anchored
-## and compressed for collisions.
-func _apply_real_scale_display() -> void:
-	var bary := nb.barycenter()
-	sun.display_pos = nb.bary_offset_au(0, bary) * Units.REAL_AU
-	for i in range(1, nb.count()):
-		var b: SimBody = nb.bodies[i]
-		if b.is_moon:
-			continue
-		b.display_pos = nb.bary_offset_au(i, bary) * Units.REAL_AU
+		b.display_pos = Units.render(nb.bary_offset_au(i, bary))
 
 
 ## A body's display position in the CANONICAL compressed sun-anchored frame,
@@ -617,10 +599,11 @@ func conserved() -> Dictionary:
 
 
 ## analytic display position of a Kepler-mode moon at an arbitrary sim-day
+## (in the active scale — Units.render/moon_offset pick the mapping)
 func _moon_kepler_display(mb: SimBody, day: float, om: float) -> Vector3:
 	var hp := Kepler.body_position_au(mb.host.el, SimTime.day_to_t(day))
 	var st := MoonMath.rel_state(mb.a_au, mb.incl_deg, mb.phase0 + om * day, om)
-	return Units.to_display(Vector3(hp[0], hp[1], hp[2])) + Vector3(st.p[0], st.p[1], st.p[2]) * mb.disp_k
+	return Units.render(Vector3(hp[0], hp[1], hp[2])) + Units.moon_offset(Vector3(st.p[0], st.p[1], st.p[2]), mb.disp_k)
 
 
 # ================================================================
@@ -799,38 +782,41 @@ func _apply_moon_display(dt: float, day: float) -> void:
 		# is active the stored local/anchor are built from the canonical
 		# compressed frame (nb.disp), so history survives a scale switch.
 		if day >= mb.trail_next_day:
+			var hi := nb.index_of(mb.host) if mb.host != null else -1
+			# raw anchor-relative offset in AU: host-relative while bound,
+			# sun-relative free — the real-scale frames render from it
+			var rel: Vector3
+			if hi >= 0:
+				rel = Vector3(nb.px[mi] - nb.px[hi], nb.py[mi] - nb.py[hi], nb.pz[mi] - nb.pz[hi])
+			else:
+				rel = Vector3(nb.px[mi] - nb.px[0], nb.py[mi] - nb.py[0], nb.pz[mi] - nb.pz[0])
 			var anchor := sun.display_pos
 			if mb.host != null:
 				anchor = mb.host.display_pos
 			var local := mb.display_pos - anchor
 			if Units.real_scale:
-				var hi := nb.index_of(mb.host) if mb.host != null else -1
 				if hi >= 0:
 					anchor = nb.disp[hi]
-					local = Vector3(nb.px[mi] - nb.px[hi], nb.py[mi] - nb.py[hi], nb.pz[mi] - nb.pz[hi]) * mb.disp_k
+					local = rel * mb.disp_k
 				else:
 					anchor = nb.disp[0]
 					local = helio - anchor
 			var fa := Vector3.ZERO
 			if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
 				fa = TrailFrames.focus.display_pos
-			mb.trail_push(day, local, anchor, fa, nb.bary_offset_au(mi, _bary_now()))
+			mb.trail_push(day, local, anchor, fa, nb.bary_offset_au(mi, _bary_now()), rel)
 			mb.trail_next_day = day + mb.trail_interval
 
 
 func _moon_mapped(mb: SimBody, host: SimBody, k: float, mi: int, helio: Vector3) -> Vector3:
-	if host == null:
-		if Units.real_scale:
-			return nb.bary_offset_au(mi, _bary_now()) * Units.REAL_AU
-		return helio
-	var hi := nb.index_of(host)
+	var hi := nb.index_of(host) if host != null else -1
 	if hi < 0:
+		# free moon: standard heliocentric mapping, honest barycentric at real scale
 		if Units.real_scale:
 			return nb.bary_offset_au(mi, _bary_now()) * Units.REAL_AU
 		return helio
 	var rel := Vector3(nb.px[mi] - nb.px[hi], nb.py[mi] - nb.py[hi], nb.pz[mi] - nb.pz[hi])
-	# real-scale: the moon sits at its true offset from the (real-scale) host
-	return host.display_pos + rel * (Units.REAL_AU if Units.real_scale else k)
+	return host.display_pos + Units.moon_offset(rel, k)
 
 
 ## Route one frame's integration to the compiled kernel when ready, else the
@@ -934,10 +920,7 @@ func _step_physics_gdscript(dt_days: float, end_day: float) -> void:
 		# their trails advance once per frame in _apply_moon_display.)
 		# Samples are sun-anchored: local = heliocentric display offset,
 		# anchor = the sun's absolute display position this substep.
-		var focus_abs := Vector3.ZERO
-		if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
-			var fi := nb.index_of(TrailFrames.focus)
-			focus_abs = nb.disp[fi] if fi >= 0 else TrailFrames.focus.display_pos
+		var focus_abs := _focus_abs_live()
 		for i in nb.count():
 			var b: SimBody = nb.bodies[i]
 			if b.is_moon:
@@ -948,14 +931,15 @@ func _step_physics_gdscript(dt_days: float, end_day: float) -> void:
 				if vm > 1e-12 and (nb.vx[i] * b.trail_lv.x + nb.vy[i] * b.trail_lv.y + nb.vz[i] * b.trail_lv.z) / vm < COS_TRAIL:
 					need = true
 			if need:
-				b.trail_push(day, nb.disp[i] - nb.disp[0], nb.disp[0], focus_abs, nb.bary_offset_au(i, _bary_now()))
+				var rel_sun := Vector3(nb.px[i] - nb.px[0], nb.py[i] - nb.py[0], nb.pz[i] - nb.pz[0])
+				b.trail_push(day, nb.disp[i] - nb.disp[0], nb.disp[0], focus_abs,
+						nb.bary_offset_au(i, _bary_now()), rel_sun)
 				var vm2 := sqrt(nb.vx[i] * nb.vx[i] + nb.vy[i] * nb.vy[i] + nb.vz[i] * nb.vz[i])
 				if vm2 == 0.0:
 					vm2 = 1.0
 				b.trail_lv = Vector3(nb.vx[i] / vm2, nb.vy[i] / vm2, nb.vz[i] / vm2)
 				b.trail_lv_ok = true
-				var r_sun := Vector3(nb.px[i] - nb.px[0], nb.py[i] - nb.py[0], nb.pz[i] - nb.pz[0]).length()
-				b.trail_interval = _trail_interval(b, r_sun)
+				b.trail_interval = _trail_interval(b, rel_sun.length())
 				b.trail_next_day = day + b.trail_interval
 		us_trails += Time.get_ticks_usec() - t3
 	perf = {
@@ -1056,10 +1040,7 @@ func _apply_kernel_result(r: Dictionary) -> void:
 ## Per-frame planet/custom trail sampling (same cadence + angle trigger as the
 ## old per-substep pass, now driven once from the frame's final positions).
 func _sample_planet_trails(day: float) -> void:
-	var focus_abs := Vector3.ZERO
-	if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
-		var fi := nb.index_of(TrailFrames.focus)
-		focus_abs = nb.disp[fi] if fi >= 0 else TrailFrames.focus.display_pos
+	var focus_abs := _focus_abs_live()
 	for i in nb.count():
 		var b: SimBody = nb.bodies[i]
 		if b.is_moon:
@@ -1070,15 +1051,30 @@ func _sample_planet_trails(day: float) -> void:
 			if vm > 1e-12 and (nb.vx[i] * b.trail_lv.x + nb.vy[i] * b.trail_lv.y + nb.vz[i] * b.trail_lv.z) / vm < COS_TRAIL:
 				need = true
 		if need:
-			b.trail_push(day, nb.disp[i] - nb.disp[0], nb.disp[0], focus_abs, nb.bary_offset_au(i, _bary_now()))
+			var rel_sun := Vector3(nb.px[i] - nb.px[0], nb.py[i] - nb.py[0], nb.pz[i] - nb.pz[0])
+			b.trail_push(day, nb.disp[i] - nb.disp[0], nb.disp[0], focus_abs,
+					nb.bary_offset_au(i, _bary_now()), rel_sun)
 			var vm2 := sqrt(nb.vx[i] * nb.vx[i] + nb.vy[i] * nb.vy[i] + nb.vz[i] * nb.vz[i])
 			if vm2 == 0.0:
 				vm2 = 1.0
 			b.trail_lv = Vector3(nb.vx[i] / vm2, nb.vy[i] / vm2, nb.vz[i] / vm2)
 			b.trail_lv_ok = true
-			var r_sun := Vector3(nb.px[i] - nb.px[0], nb.py[i] - nb.py[0], nb.pz[i] - nb.pz[0]).length()
-			b.trail_interval = _trail_interval(b, r_sun)
+			b.trail_interval = _trail_interval(b, rel_sun.length())
 			b.trail_next_day = day + b.trail_interval
+
+
+## The focus body's absolute display position right now, in the ACTIVE scale —
+## the `focus_abs` for physics-mode trail pushes. ZERO unless the FOCUS frame
+## is active, so other modes pay nothing.
+func _focus_abs_live() -> Vector3:
+	if TrailFrames.mode != TrailFrames.MODE_FOCUS or TrailFrames.focus == null:
+		return Vector3.ZERO
+	var fi := nb.index_of(TrailFrames.focus)
+	if fi < 0:
+		return TrailFrames.focus.display_pos
+	if Units.real_scale:
+		return nb.bary_offset_au(fi, nb.barycenter()) * Units.REAL_AU
+	return nb.disp[fi]
 
 
 ## The sun always survives; otherwise the heavier body does, growing by
@@ -1099,10 +1095,10 @@ func _merge_bodies(i: int, j: int) -> void:
 	# valid here (merge_parts only touched the survivor's row, and refresh_display
 	# already ran for this substep), and matches the sun-anchored display frame
 	var impact := nb.disp[li]
-	if Units.real_scale:
-		# render frame is linear barycentric — map the flash to where the
+	if Units.real_scale or TrailFrames.mode == TrailFrames.MODE_TRUE:
+		# the render frame is honest barycentric — map the flash to where the
 		# collision appears on screen (row li's position is still intact)
-		impact = nb.bary_offset_au(li, nb.barycenter()) * Units.REAL_AU
+		impact = Units.render(nb.bary_offset_au(li, nb.barycenter()))
 	var effect_scale := maxf(lb.size if sb.is_sun else sb.size, 0.8)
 
 	sb.mass_scale = 1.0    # merged mass becomes the new 1× baseline
@@ -1354,8 +1350,9 @@ func backfill_planet_trail(b: SimBody) -> void:
 	for k in range(b.trail_max - 1, -1, -1):
 		var day_s := day - k * b.trail_interval
 		var s := Kepler.body_position_au(b.el, SimTime.day_to_t(day_s))
-		b.trail_push(day_s, Units.to_display(Vector3(s[0], s[1], s[2])),
-				Vector3.ZERO, _focus_abs_kepler(day_s), Vector3(s[0], s[1], s[2]))
+		var s_au := Vector3(s[0], s[1], s[2])
+		b.trail_push(day_s, Units.to_display(s_au),
+				Vector3.ZERO, _focus_abs_kepler(day_s), s_au, s_au)
 	b.trail_next_day = day + b.trail_interval
 
 
@@ -1376,7 +1373,7 @@ func _focus_abs_kepler(day: float) -> Vector3:
 	if f.custom:
 		return f.display_pos   # no ephemeris — best effort
 	var s := Kepler.body_position_au(f.el, SimTime.day_to_t(day))
-	return Units.to_display(Vector3(s[0], s[1], s[2]))
+	return Units.render(Vector3(s[0], s[1], s[2]))
 
 
 ## selection drives the FOCUS frame's reference body (falls back to the sun)

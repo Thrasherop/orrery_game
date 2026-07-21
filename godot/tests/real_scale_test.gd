@@ -56,6 +56,16 @@ func _ready() -> void:
 	_check(_tip_on_body(earth, sim.sun, days) < 0.5,
 		"real scale: Earth trail ends on the body (off by %.4f)" % _tip_on_body(earth, sim.sun, days))
 
+	# every path-frame mode keeps its semantics at real scale: lossless
+	# switching and the trail-ends-on-body invariant in each frame
+	for mode in TrailFrames.MODE_NAMES.size():
+		Events.set_trail_mode(mode)
+		_check(earth.trail_size() == earth.trail_verts.size(),
+			"real scale mode %d: verts in lockstep" % mode)
+		_check(_tip_on_body(earth, sim.sun, days) < 0.5,
+			"real scale mode %d: trail ends on the body (off by %.4f)" % [mode, _tip_on_body(earth, sim.sun, days)])
+	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
+
 	# simulated moons ride their host at true offsets
 	var moon_checked := false
 	for mb: SimBody in sim.moons:
@@ -101,6 +111,29 @@ func _ready() -> void:
 		"real scale (physics): Earth trail ends on the body (off by %.4f)" % _tip_on_body(earth, sim.sun, days))
 	_check(_tip_on_body(body, sim.sun, days) < 0.5,
 		"real scale (physics): custom trail ends on the body (off by %.4f)" % _tip_on_body(body, sim.sun, days))
+
+	# frame semantics survive at real scale: Sun-locked draws the HELIOCENTRIC
+	# path (rel x K), Barycentric the honest barycentric one — they differ by
+	# exactly the sun's own barycentric offset
+	Events.selected = earth
+	Events.selection_changed.emit(earth)
+	for mode in TrailFrames.MODE_NAMES.size():
+		Events.set_trail_mode(mode)
+		_check(_tip_on_body(earth, sim.sun, days) < 0.5,
+			"real scale (physics) mode %d: trail ends on the body (off by %.4f)" % [mode, _tip_on_body(earth, sim.sun, days)])
+	Events.selected = null
+	Events.selection_changed.emit(null)
+	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
+	var n_e := earth.trail_size()
+	var v_local: Vector3 = earth.trail_verts[n_e - 1]
+	_check(v_local.distance_to(earth.trail_rel[n_e - 1] * Units.REAL_AU) < 1e-6,
+		"real scale: Sun-locked vertex is the heliocentric sample x %.1f" % Units.REAL_AU)
+	Events.set_trail_mode(TrailFrames.MODE_INERTIAL)
+	var v_bary: Vector3 = earth.trail_verts[n_e - 1]
+	var sun_off: Vector3 = (earth.trail_bary[n_e - 1] - earth.trail_rel[n_e - 1]) * Units.REAL_AU
+	_check((v_bary - v_local).distance_to(sun_off) < 1e-6,
+		"real scale: Sun-locked vs Barycentric differ by the sun's offset")
+	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
 	for mb: SimBody in sim.moons:
 		if mb.body_name == "Moon" and mb.simulated and mb.host != null and mb.bind_t >= 1.0:
 			var off2: float = mb.display_pos.distance_to(mb.host.display_pos)

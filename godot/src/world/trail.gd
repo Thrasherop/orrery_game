@@ -5,10 +5,17 @@ extends MeshInstance3D
 ## this view rebuilds its mesh only when the trail version changes (one
 ## cheap array copy). SolarSystemView positions it every frame at the
 ## active frame's anchor.
+##
+## The strip ends at the NEWEST SAMPLE, which can lag the body by up to one
+## sample interval — invisible zoomed out, but up close the line would end
+## behind the planet and extend in discrete jumps. A separate 2-vertex head
+## segment (rebuilt every frame, it's tiny) bridges the newest sample to the
+## body's live position so the trail stays continuously glued to it.
 
 var body: SimBody
 var mat: StandardMaterial3D
 var _last_version := -1
+var _head: MeshInstance3D
 
 
 func setup(b: SimBody) -> void:
@@ -24,6 +31,11 @@ func setup(b: SimBody) -> void:
 	# local geometry tens of thousands of units from its origin — the AABB
 	# must cover that or the strip gets frustum-culled
 	custom_aabb = AABB(Vector3(-90000, -90000, -90000), Vector3(180000, 180000, 180000))
+	_head = MeshInstance3D.new()
+	_head.mesh = ArrayMesh.new()
+	_head.material_override = mat
+	_head.custom_aabb = custom_aabb
+	add_child(_head)
 	set_opacity(b.trail_opacity)
 
 
@@ -34,6 +46,7 @@ func set_opacity(a: float) -> void:
 
 
 func refresh() -> void:
+	_refresh_head()
 	if body.trail_version == _last_version:
 		return
 	_last_version = body.trail_version
@@ -49,6 +62,25 @@ func refresh() -> void:
 			pts = pts.slice(cut)
 	if pts.size() < 2:
 		return
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = pts
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_LINE_STRIP, arrays)
+
+
+## live segment: newest sample vertex → the body's current position, in the
+## mesh's frame-local space (our own `position` is this frame's anchor_now,
+## set by SolarSystemView just before refresh)
+func _refresh_head() -> void:
+	var am := _head.mesh as ArrayMesh
+	am.clear_surfaces()
+	var n := body.trail_verts.size()
+	if n == 0:
+		return
+	var pts := PackedVector3Array()
+	pts.resize(2)
+	pts[0] = body.trail_verts[n - 1]
+	pts[1] = body.display_pos - position
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = pts
