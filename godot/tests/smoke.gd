@@ -45,6 +45,7 @@ func _ready() -> void:
 	Events.selection_changed.emit(earth)   # focus follows selection
 	for mode in TrailFrames.MODE_NAMES.size():
 		Events.set_trail_mode(mode)
+		sim.tick(0.0)   # toggles take effect at the next tick's rebuild point
 		var n := mercury.trail_size()
 		_check(n == mercury.trail_verts.size(),
 			"mode %d: verts in lockstep with samples" % mode)

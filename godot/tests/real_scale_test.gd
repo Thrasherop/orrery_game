@@ -61,6 +61,7 @@ func _ready() -> void:
 	# switching and the trail-ends-on-body invariant in each frame
 	for mode in TrailFrames.MODE_NAMES.size():
 		Events.set_trail_mode(mode)
+		sim.tick(0.0)   # toggles take effect at the next tick's rebuild point
 		_check(earth.trail_size() == earth.trail_verts.size(),
 			"real scale mode %d: verts in lockstep" % mode)
 		_check(_tip_on_body(earth, sim.sun, days) < 0.5,
@@ -120,21 +121,25 @@ func _ready() -> void:
 	Events.selection_changed.emit(earth)
 	for mode in TrailFrames.MODE_NAMES.size():
 		Events.set_trail_mode(mode)
+		sim.tick(0.0)
 		_check(_tip_on_body(earth, sim.sun, days) < 0.5,
 			"real scale (physics) mode %d: trail ends on the body (off by %.4f)" % [mode, _tip_on_body(earth, sim.sun, days)])
 	Events.selected = null
 	Events.selection_changed.emit(null)
 	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
+	sim.tick(0.0)
 	var n_e := earth.trail_size()
 	var v_local: Vector3 = earth.trail_verts[n_e - 1]
 	_check(v_local.distance_to(earth.trail_rel[n_e - 1] * Units.REAL_AU) < 1e-6,
 		"real scale: Sun-locked vertex is the heliocentric sample x %.1f" % Units.REAL_AU)
 	Events.set_trail_mode(TrailFrames.MODE_INERTIAL)
+	sim.tick(0.0)
 	var v_bary: Vector3 = earth.trail_verts[n_e - 1]
 	var sun_off: Vector3 = (earth.trail_bary[n_e - 1] - earth.trail_rel[n_e - 1]) * Units.REAL_AU
 	_check((v_bary - v_local).distance_to(sun_off) < 1e-6,
 		"real scale: Sun-locked vs Barycentric differ by the sun's offset")
 	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
+	sim.tick(0.0)
 	for mb: SimBody in sim.moons:
 		if mb.body_name == "Moon" and mb.simulated and mb.host != null and mb.bind_t >= 1.0:
 			var off2: float = mb.display_pos.distance_to(mb.host.display_pos)
@@ -147,6 +152,7 @@ func _ready() -> void:
 			_check(TrailFrames.anchor_now(mb, sim.sun, days).distance_to(mb.host.display_pos) < 1e-9,
 				"moon paths default: Sun-locked anchors the Moon's trail on its host")
 			Events.set_moon_trail_frame(true)
+			sim.tick(0.0)
 			_check(TrailFrames.anchor_now(mb, sim.sun, days).distance_to(sim.sun.display_pos) < 1e-9,
 				"moon-frame on: Sun-locked anchors the Moon's trail on the sun")
 			_check(_tip_on_body(mb, sim.sun, days) < 0.1,
@@ -196,6 +202,7 @@ func _ready() -> void:
 
 	# moon-frame toggle holds in the compressed view too
 	Events.set_moon_trail_frame(true)
+	sim.tick(0.0)
 	for mb: SimBody in sim.moons:
 		if mb.body_name == "Moon" and mb.simulated and mb.host != null and mb.bind_t >= 1.0:
 			_check(_tip_on_body(mb, sim.sun, days) < 0.5,

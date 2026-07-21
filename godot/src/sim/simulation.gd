@@ -76,8 +76,8 @@ var custom_count := 0
 # Compiled-kernel backend (created lazily; null-safe — ready() gates use).
 var _kernel: NativeKernel = null
 
-# a toggle handler rebuilt trails this frame with stale display positions —
-# rebuild again at the end of the next tick (see _finish_tick_trails)
+# trail verts need a rebuild (frame/scale/focus changed) — processed at the
+# single rebuild point, the end of tick() (see _finish_tick_trails)
 var _trails_dirty := false
 
 
@@ -99,15 +99,14 @@ func _init() -> void:
 	# samples are frame-independent, so a switch never resets anything)
 	TrailFrames.focus = sun
 	TrailFrames.sun_body = sun
-	# Toggle handlers rebuild immediately (callers may read verts right away)
-	# but run mid-input, before this tick's display positions reflect the new
-	# state — body_abs_at reads live display_pos, so mark the trails dirty
-	# and the end of the next tick rebuilds once more with fresh displays.
-	Events.trail_mode_changed.connect(func(_m: int) -> void: _rebuild_and_redo())
-	# real-scale / moon-frame toggles re-render every trail from raw samples —
-	# lossless in both directions, exactly like a frame-mode switch
-	Events.real_scale_changed.connect(func(_on: bool) -> void: _rebuild_and_redo())
-	Events.moon_trail_frame_changed.connect(func(_on: bool) -> void: _rebuild_and_redo())
+	# Frame/scale/focus toggles only mark the trails dirty; the cached
+	# vertices are rebuilt at exactly one point — the end of tick(), once
+	# every display_pos reflects the new state (body_abs_at and anchor_now
+	# read live positions). Switching is lossless: verts re-derive from the
+	# frame-independent raw samples.
+	Events.trail_mode_changed.connect(func(_m: int) -> void: _trails_dirty = true)
+	Events.real_scale_changed.connect(func(_on: bool) -> void: _trails_dirty = true)
+	Events.moon_trail_frame_changed.connect(func(_on: bool) -> void: _trails_dirty = true)
 	Events.selection_changed.connect(_on_selection_for_trails)
 
 
@@ -270,12 +269,6 @@ func tick(dt: float) -> void:
 	var T := SimTime.julian_centuries(sim_ms)
 	var days := SimTime.sim_days(sim_ms)
 
-	# drift-mode meshes store GAL_V*(day − epoch) in float32 — rebase the
-	# epoch (with a rebuild) before it grows into visible vertex quantization
-	if (TrailFrames.mode == TrailFrames.MODE_GALAXY or TrailFrames.mode == TrailFrames.MODE_TRUE) \
-			and absf(days - TrailFrames.drift_epoch) > 300.0:
-		_rebuild_trail_verts()
-
 	# positions: N-body gravity when active, otherwise Kepler ephemeris
 	if physics_active:
 		if playing and dt > 0.0:
@@ -305,7 +298,7 @@ func tick(dt: float) -> void:
 			_update_moon_hosts()
 			_apply_moon_display(dt, SimTime.sim_days(sim_ms))
 		_tick_railed(SimTime.sim_days(sim_ms))
-		_finish_tick_trails()
+		_finish_tick_trails(SimTime.sim_days(sim_ms))
 	else:
 		for b: SimBody in planets:
 			var pa := Kepler.body_position_au(b.el, T)
@@ -330,13 +323,19 @@ func tick(dt: float) -> void:
 					b.trail_next_day += b.trail_interval
 		_tick_moons_kepler(days)
 		_tick_railed(days)
-		_finish_tick_trails()
+		_finish_tick_trails(days)
 
 
-## a toggle handler rebuilt trails mid-input with last frame's display
-## positions — now that this tick has refreshed every display_pos, rebuild
-## once more so body_abs_at-based vertices reference the current state
-func _finish_tick_trails() -> void:
+## The single trail-rebuild point: the end of tick(), after every display_pos
+## reflects this tick's state (body_abs_at and anchor_now read live
+## positions). Runs when a frame/scale/focus toggle marked the trails dirty,
+## or to rebase the drift epoch — drift-mode meshes store GAL_V*(day − epoch)
+## in float32, which must stay small near the head or its quantization
+## jitters a true-scale planet's trail.
+func _finish_tick_trails(days: float) -> void:
+	if (TrailFrames.mode == TrailFrames.MODE_GALAXY or TrailFrames.mode == TrailFrames.MODE_TRUE) \
+			and absf(days - TrailFrames.drift_epoch) > 300.0:
+		_trails_dirty = true
 	if _trails_dirty:
 		_trails_dirty = false
 		_rebuild_trail_verts()
@@ -506,24 +505,19 @@ func _drive_railed(b: SimBody, days: float) -> void:
 	b.r_au = b.pos_au.length()
 	b.vel_display = tang
 	b.vel_kms = (_vel_au_day(anchor) + tang).length() * Units.KMS_PER_AUDAY
-	# sun-anchored display — kept as the trail's frame-independent local/anchor.
-	# In the real-scale view the anchor's display_pos is linear, so the stored
-	# samples are built from the CANONICAL compressed anchor instead — switching
-	# the scale back must find uncorrupted history.
-	var a_disp := anchor.display_pos
-	if Units.real_scale:
-		a_disp = _canon_display(anchor)
+	# canonical sun-anchored sample data (local/anchor). display_pos can't
+	# feed it: the real-scale view AND the Real-space frame overwrite anchors'
+	# display_pos with barycentric positions, which would contaminate the
+	# stored history. In the normal frames _canon_display == display_pos.
+	var a_disp := _canon_display(anchor)
 	var local := rel * b.disp_k if (b.is_moon and b.host != null) else Units.to_display(rel)
-	# raw barycentric offset (AU) for the Real-space frame: the anchor's own
-	# offset plus this body's anchor-relative rel
+	# raw barycentric offset (AU): the anchor's own offset plus this body's rel
 	var bary := _bary_offset_of(anchor) + rel
 	if b.is_moon and b.host != null:
 		# bound moons ride their host in either scale (exaggerated / true offset)
 		b.display_pos = anchor.display_pos + Units.moon_offset(rel, b.disp_k)
-	elif Units.real_scale:
-		b.display_pos = bary * Units.REAL_AU
-	elif TrailFrames.mode == TrailFrames.MODE_TRUE:
-		b.display_pos = Units.to_display(bary)
+	elif Units.real_scale or TrailFrames.mode == TrailFrames.MODE_TRUE:
+		b.display_pos = Units.render(bary)   # honest barycentric render frames
 	else:
 		b.display_pos = a_disp + local
 	if days >= b.trail_next_day:
@@ -568,9 +562,10 @@ func _apply_barycentric_display() -> void:
 
 
 ## A body's display position in the CANONICAL compressed sun-anchored frame,
-## regardless of the active render scale. Trail samples (local/anchor) are
-## stored in this frame, so pushes taken while the real-scale view is active
-## read anchors from here instead of the (linear) display_pos.
+## regardless of the active render frame or scale. Trail samples
+## (local/anchor) are stored in this frame; the barycentric render frames
+## (real scale, Real-space) overwrite display_pos, so pushes read anchors
+## from here instead. Equals display_pos whenever no overwrite is active.
 func _canon_display(b: SimBody) -> Vector3:
 	if physics_active and nb != null:
 		var i := nb.index_of(b)
@@ -805,29 +800,27 @@ func _apply_moon_display(dt: float, day: float) -> void:
 				mb.vel_display = Vector3(nb.vx[mi] - nb.vx[hi], nb.vy[mi] - nb.vy[hi], nb.vz[mi] - nb.vz[hi])
 		# trails advance here (once per frame), not per substep — a bound
 		# moon's path only exists in this amplified display space. Anchored
-		# on the host (the sun while free-flying). While the real-scale view
-		# is active the stored local/anchor are built from the canonical
-		# compressed frame (nb.disp), so history survives a scale switch.
+		# on the host (the sun while free-flying). Samples store the
+		# CANONICAL sun-anchored frame straight from nb.disp — display_pos
+		# is unusable for storage: the barycentric render frames (real
+		# scale, Real-space) overwrite it, and a host-change blend would
+		# bake its transient into history (the head segment bridges the
+		# blend on screen instead).
 		if day >= mb.trail_next_day:
 			var hi := nb.index_of(mb.host) if mb.host != null else -1
-			# raw anchor-relative offset in AU: host-relative while bound,
-			# sun-relative free — the real-scale frames render from it
+			# rel: raw anchor-relative offset in AU — host-relative while
+			# bound, sun-relative free; the real-scale frames render from it
 			var rel: Vector3
+			var anchor: Vector3
+			var local: Vector3
 			if hi >= 0:
 				rel = Vector3(nb.px[mi] - nb.px[hi], nb.py[mi] - nb.py[hi], nb.pz[mi] - nb.pz[hi])
+				anchor = nb.disp[hi]
+				local = rel * mb.disp_k
 			else:
 				rel = Vector3(nb.px[mi] - nb.px[0], nb.py[mi] - nb.py[0], nb.pz[mi] - nb.pz[0])
-			var anchor := sun.display_pos
-			if mb.host != null:
-				anchor = mb.host.display_pos
-			var local := mb.display_pos - anchor
-			if Units.real_scale:
-				if hi >= 0:
-					anchor = nb.disp[hi]
-					local = rel * mb.disp_k
-				else:
-					anchor = nb.disp[0]
-					local = helio - anchor
+				anchor = nb.disp[0]
+				local = helio - anchor
 			var fa := Vector3.ZERO
 			if TrailFrames.mode == TrailFrames.MODE_FOCUS and TrailFrames.focus != null:
 				fa = TrailFrames.focus.display_pos
@@ -1410,7 +1403,7 @@ func _on_selection_for_trails(body) -> void:
 		return
 	TrailFrames.focus = f
 	if TrailFrames.mode == TrailFrames.MODE_FOCUS:
-		_rebuild_trail_verts()
+		_trails_dirty = true
 
 
 ## frame mode or focus changed: recompute every cached vertex from the
@@ -1421,10 +1414,3 @@ func _rebuild_trail_verts() -> void:
 	TrailFrames.drift_epoch = SimTime.sim_days(sim_ms)
 	for b in all_bodies():
 		b.trail_rebuild()
-
-
-## toggle-handler path: rebuild now (callers may read verts immediately) and
-## again at the end of the next tick, when display positions are current
-func _rebuild_and_redo() -> void:
-	_rebuild_trail_verts()
-	_trails_dirty = true
