@@ -29,6 +29,14 @@ static func set_real_scale(on: bool) -> void:
 	_write("display", "real_scale", on)
 
 
+static func moon_trail_frame() -> bool:
+	return bool(_read("display", "moon_trail_frame", false))
+
+
+static func set_moon_trail_frame(on: bool) -> void:
+	_write("display", "moon_trail_frame", on)
+
+
 static func _read(section: String, key: String, fallback):
 	var cf := ConfigFile.new()
 	if cf.load(PATH) != OK:

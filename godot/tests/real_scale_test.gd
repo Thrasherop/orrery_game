@@ -27,6 +27,7 @@ func _tip_on_body(b: SimBody, sun: SimBody, days: float) -> float:
 func _ready() -> void:
 	print("[real-scale] view toggle")
 	Events.set_real_scale(false)
+	Events.set_moon_trail_frame(false)
 	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
 
 	var sim := Simulation.new()
@@ -141,6 +142,37 @@ func _ready() -> void:
 				"real scale (physics): the Moon rides its host at true offset (%.4f units)" % off2)
 			_check(_tip_on_body(mb, sim.sun, days) < 0.1,
 				"real scale (physics): Moon trail ends on the body (off by %.4f)" % _tip_on_body(mb, sim.sun, days))
+			# moon-frame toggle: Sun-locked moon trails re-anchor on the sun
+			# and still end on the moon
+			_check(TrailFrames.anchor_now(mb, sim.sun, days).distance_to(mb.host.display_pos) < 1e-9,
+				"moon paths default: Sun-locked anchors the Moon's trail on its host")
+			Events.set_moon_trail_frame(true)
+			_check(TrailFrames.anchor_now(mb, sim.sun, days).distance_to(sim.sun.display_pos) < 1e-9,
+				"moon-frame on: Sun-locked anchors the Moon's trail on the sun")
+			_check(_tip_on_body(mb, sim.sun, days) < 0.1,
+				"moon-frame on: Moon trail still ends on the body (off by %.4f)" % _tip_on_body(mb, sim.sun, days))
+			Events.set_moon_trail_frame(false)
+
+	# --- drift epoch: float32 jitter guard ------------------------------
+	# In the drift modes the mesh stores GAL_V*(day − epoch); without the
+	# rolling rebase the term reaches ~1600 units at the current sim date and
+	# its float32 quantization jitters a true-scale planet's trail visibly.
+	Events.set_trail_mode(TrailFrames.MODE_TRUE)
+	sim.speed = 31557600.0   # 1 year/s — sail past the 300-day rebase window
+	for i in range(90):
+		sim.tick(1.0 / 60.0)
+	sim.speed = 604800.0     # slow down so a fresh sample lands near "now"
+	for i in range(30):
+		sim.tick(1.0 / 60.0)
+	days = SimTime.sim_days(sim.sim_ms)
+	_check(absf(days - TrailFrames.drift_epoch) <= 320.0,
+		"drift epoch rides along with sim time (lag %.0f d)" % absf(days - TrailFrames.drift_epoch))
+	var n_d := earth.trail_size()
+	_check(earth.trail_verts[n_d - 1].length() < 500.0,
+		"drift-mode head vertex stays float32-small (%.0f units)" % earth.trail_verts[n_d - 1].length())
+	_check(_tip_on_body(earth, sim.sun, days) < 0.5,
+		"drift-mode trail still ends on the body after rebases (off by %.4f)" % _tip_on_body(earth, sim.sun, days))
+	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
 
 	# round-trip back to compressed
 	Events.set_real_scale(false)
@@ -153,6 +185,14 @@ func _ready() -> void:
 		"toggle off (physics): Earth trail ends on the body (off by %.4f)" % _tip_on_body(earth, sim.sun, days))
 	_check(_tip_on_body(body, sim.sun, days) < 0.5,
 		"toggle off (physics): custom trail ends on the body (off by %.4f)" % _tip_on_body(body, sim.sun, days))
+
+	# moon-frame toggle holds in the compressed view too
+	Events.set_moon_trail_frame(true)
+	for mb: SimBody in sim.moons:
+		if mb.body_name == "Moon" and mb.simulated and mb.host != null and mb.bind_t >= 1.0:
+			_check(_tip_on_body(mb, sim.sun, days) < 0.5,
+				"moon-frame (compressed): Moon trail ends on the body (off by %.4f)" % _tip_on_body(mb, sim.sun, days))
+	Events.set_moon_trail_frame(false)
 
 	if _failures == 0:
 		print("[real-scale] ALL PASSED")

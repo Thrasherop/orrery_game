@@ -61,6 +61,34 @@ func _ready() -> void:
 	await get_tree().create_timer(1.0).timeout
 	await _shot("res://tests/realscale_7_callisto_closeup.png")
 
+	# True motion close-up on Jupiter: the drift-mode trail must hug the
+	# planet without float32 jitter (verified over frames in-app; here we
+	# check the line lands on the disc)
+	Events.set_trail_mode(TrailFrames.MODE_TRUE)
+	for b in sim.planets:
+		if b.body_name == "Jupiter":
+			Events.select_requested.emit(b)
+	await get_tree().create_timer(1.6).timeout
+	var jup: SimBody = Events.selected
+	var jr: float = BodyView.real_display_radius(jup.radius_km, jup.mass_e)
+	rig.apply_view(jup.display_pos, rig.yaw_goal, rig.pitch_goal, jr * 8.0)
+	await get_tree().create_timer(1.0).timeout
+	await _shot("res://tests/realscale_8_jupiter_true_motion.png")
+
+	# Sun-locked with "moon paths follow the frame": the Moon draws its true
+	# wavy path around the Sun instead of a ring around Earth
+	Events.set_trail_mode(TrailFrames.MODE_LOCAL)
+	Events.set_moon_trail_frame(true)
+	for b in sim.planets:
+		if b.body_name == "Earth":
+			Events.select_requested.emit(b)
+	await get_tree().create_timer(1.6).timeout
+	var e2: SimBody = Events.selected
+	rig.apply_view(e2.display_pos, rig.yaw_goal, rig.pitch_goal, 0.25)
+	await get_tree().create_timer(1.0).timeout
+	await _shot("res://tests/realscale_9_moon_frame.png")
+	Events.set_moon_trail_frame(false)
+
 	# toggle back off: the familiar exaggerated orrery returns
 	Events.deselect_requested.emit()
 	rig.apply_view(Vector3.ZERO, rig.yaw_goal, rig.pitch_goal, 150.0)

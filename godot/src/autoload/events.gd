@@ -26,6 +26,7 @@ signal labels_toggled(on)
 signal vectors_toggled(on)
 signal trail_mode_changed(mode)    # authoritative state lives in TrailFrames.mode
 signal real_scale_changed(on)      # authoritative state lives in Units.real_scale
+signal moon_trail_frame_changed(on)  # authoritative state lives in TrailFrames.moon_frame
 
 var show_orbits := true
 var show_labels := true
@@ -35,6 +36,7 @@ var show_vectors := true
 func _ready() -> void:
 	TrailFrames.mode = Prefs.trail_mode()
 	Units.real_scale = Prefs.real_scale()
+	TrailFrames.moon_frame = Prefs.moon_trail_frame()
 
 # add-body panel live preview --------------------------------------------
 signal add_preview_changed(cfg)    # Dictionary of inputs, or null to hide
@@ -69,3 +71,11 @@ func set_real_scale(on: bool) -> void:
 	Units.real_scale = on
 	Prefs.set_real_scale(on)
 	real_scale_changed.emit(on)
+
+
+func set_moon_trail_frame(on: bool) -> void:
+	if TrailFrames.moon_frame == on:
+		return
+	TrailFrames.moon_frame = on
+	Prefs.set_moon_trail_frame(on)
+	moon_trail_frame_changed.emit(on)

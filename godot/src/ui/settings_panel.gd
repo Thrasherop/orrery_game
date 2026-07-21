@@ -32,6 +32,7 @@ var _mode_btns := {}         # TrailFrames mode int -> Button (primary + advance
 var _adv_toggle: Button      # "Advanced" disclosure for the barycentric frames
 var _adv_row: HBoxContainer  # holds the advanced-frame chips (hidden by default)
 var _mode_desc: Label
+var _moon_frame_check: CheckButton
 var _g_slider: HSlider
 var _g_label: Label
 var _last_g := 1.0
@@ -141,6 +142,10 @@ func setup(sim_: Simulation) -> void:
 	_mode_desc = UITheme.make_label("", 10, UITheme.MUTED)
 	_mode_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_mode_desc)
+	_moon_frame_check = _check("Moon paths follow the frame",
+		"Off: moon paths ring their host planet. On: moons are drawn in the selected path frame like every other body — in Sun-locked you see a moon's true wavy path around the Sun.",
+		func(on: bool) -> void: Events.set_moon_trail_frame(on))
+	box.add_child(_moon_frame_check)
 
 	# --- Physics ----------------------------------------------------------
 	box.add_child(_spacer())
@@ -260,6 +265,7 @@ func _refresh_toggles() -> void:
 	UITheme.set_chip_active(_vectors_btn, Events.show_vectors)
 	for m in _mode_btns:
 		UITheme.set_chip_active(_mode_btns[m], TrailFrames.mode == m)
+	_moon_frame_check.set_pressed_no_signal(TrailFrames.moon_frame)
 	# keep the active frame visible: auto-open the Advanced row when an advanced
 	# frame is selected (e.g. restored from a save or set via the P key)
 	if TrailFrames.mode in TrailFrames.MODE_ADVANCED and not _adv_row.visible:

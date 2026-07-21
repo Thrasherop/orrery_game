@@ -129,7 +129,7 @@ func trail_push(day: float, local: Vector3, anchor: Vector3, focus_abs := Vector
 	trail_anchor.append(anchor)
 	trail_bary.append(bary)
 	trail_rel.append(rel)
-	trail_verts.append(TrailFrames.vertex(day, local, anchor, focus_abs, bary, rel))
+	trail_verts.append(TrailFrames.vertex(self, day, local, anchor, focus_abs, bary, rel))
 	trail_version += 1
 
 
@@ -142,7 +142,7 @@ func trail_size() -> int:
 func trail_rebuild() -> void:
 	var n := trail_days.size()
 	for i in n:
-		trail_verts[i] = TrailFrames.vertex_hist(trail_days[i], trail_local[i], trail_anchor[i], trail_bary[i], trail_rel[i])
+		trail_verts[i] = TrailFrames.vertex_hist(self, trail_days[i], trail_local[i], trail_anchor[i], trail_bary[i], trail_rel[i])
 	trail_version += 1
 
 

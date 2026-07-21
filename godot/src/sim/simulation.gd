@@ -94,10 +94,12 @@ func _init() -> void:
 	# cached trail vertices whenever the viewing frame changes (the raw
 	# samples are frame-independent, so a switch never resets anything)
 	TrailFrames.focus = sun
+	TrailFrames.sun_body = sun
 	Events.trail_mode_changed.connect(func(_m: int) -> void: _rebuild_trail_verts())
-	# real-scale toggle re-renders every trail from its raw bary samples —
+	# real-scale / moon-frame toggles re-render every trail from raw samples —
 	# lossless in both directions, exactly like a frame-mode switch
 	Events.real_scale_changed.connect(func(_on: bool) -> void: _rebuild_trail_verts())
+	Events.moon_trail_frame_changed.connect(func(_on: bool) -> void: _rebuild_trail_verts())
 	Events.selection_changed.connect(_on_selection_for_trails)
 
 
@@ -259,6 +261,12 @@ func tick(dt: float) -> void:
 		sim_ms += dt * speed * 1000.0
 	var T := SimTime.julian_centuries(sim_ms)
 	var days := SimTime.sim_days(sim_ms)
+
+	# drift-mode meshes store GAL_V*(day − epoch) in float32 — rebase the
+	# epoch (with a rebuild) before it grows into visible vertex quantization
+	if (TrailFrames.mode == TrailFrames.MODE_GALAXY or TrailFrames.mode == TrailFrames.MODE_TRUE) \
+			and absf(days - TrailFrames.drift_epoch) > 300.0:
+		_rebuild_trail_verts()
 
 	# positions: N-body gravity when active, otherwise Kepler ephemeris
 	if physics_active:
@@ -1387,7 +1395,10 @@ func _on_selection_for_trails(body) -> void:
 
 
 ## frame mode or focus changed: recompute every cached vertex from the
-## frame-independent samples — nothing is cleared, switching is lossless
+## frame-independent samples — nothing is cleared, switching is lossless.
+## Every rebuild also rebases the drift epoch (see TrailFrames.drift_epoch),
+## so drift-mode vertices stay small near the trail head.
 func _rebuild_trail_verts() -> void:
+	TrailFrames.drift_epoch = SimTime.sim_days(sim_ms)
 	for b in all_bodies():
 		b.trail_rebuild()
