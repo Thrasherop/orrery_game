@@ -1,6 +1,5 @@
 when adding a moon to a body, the distances shouldn't be in fractions of an AU. Like, if I put in 2, then the moon should me orbiting that body at 2 AU distance. 
 
-show object radaii to scale (yes, planets will be so small that you will only see the orbits)
 
 multiple tabs
 
