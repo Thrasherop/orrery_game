@@ -152,6 +152,7 @@ func update_world(dt: float, days: float, cam: Camera3D) -> void:
 		var alen := clampf(floor_len + speed_kms * 0.3, floor_len, 26.0)
 		arrow.set_arrow_length(alen, alen * 0.22, alen * 0.13)
 	starfield.update_rotation(dt)
+	starfield.follow_camera(cam.global_position, cam.far)
 	effects.update_effects(dt)
 	preview.follow_anchor(sim.sun.display_pos)
 

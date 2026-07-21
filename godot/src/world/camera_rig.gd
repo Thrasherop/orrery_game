@@ -74,11 +74,32 @@ func _sync_spherical(cam_pos: Vector3, tgt: Vector3) -> void:
 	dist_goal = dist
 
 
-## real-scale view: the whole inner system huddles near the origin, so the
-## zoom floor drops to let the camera get meaningfully close (near plane 0.1
-## still bounds it — planets are sub-pixel dots there by design)
+## real-scale view: the zoom floor drops all the way to a few radii of the
+## selected body's TRUE size, so the camera can dive in until the planet's
+## real disc fills the screen (the near plane follows in _update_near)
 func _min_dist() -> float:
-	return 0.5 if Units.real_scale else MIN_DIST
+	if not Units.real_scale:
+		return MIN_DIST
+	var sel = Events.selected
+	if sel != null:
+		return maxf(BodyView.real_display_radius(sel.radius_km, sel.mass_e) * 2.5, 0.0002)
+	return 0.02
+
+
+## Real scale spans ~7 decades of distance (Neptune's orbit at 210 units down
+## to Callisto's 1e-4 disc) — no fixed near plane covers that. Pull the near
+## plane in proportionally to the camera-target distance, and pull FAR in with
+## it: past a near/far ratio of ~1e7 the renderer's float32 frustum math
+## degenerates (light culler fails, whole scene goes black — measured with
+## tests/near_probe; ratio 9e6 renders fine, 9e7 doesn't). The starfield
+## compensates by shrinking around the camera (Starfield.follow_camera).
+func _update_near() -> void:
+	if Units.real_scale:
+		cam.near = clampf(cam.position.distance_to(target) * 0.1, 2e-5, 0.1)
+		cam.far = minf(cam.near * 5e6, 9000.0)
+	elif cam.near != 0.1:
+		cam.near = 0.1
+		cam.far = 9000.0
 
 
 func _offset() -> Vector3:
@@ -249,7 +270,12 @@ func apply_view(tgt: Vector3, yaw_: float, pitch_: float, dist_: float) -> void:
 
 ## animate camera to frame the body (called by main on new selection)
 func fly_to(body: SimBody) -> void:
-	_start_fly(maxf(body.size * 5.5, 7.0), body.display_pos)
+	var view_dist := maxf(body.size * 5.5, 7.0)
+	if Units.real_scale:
+		# land ~60 true radii out: the disc is already visible and the whole
+		# moon system fits in frame; scrolling covers the rest of the way in
+		view_dist = maxf(BodyView.real_display_radius(body.radius_km, body.mass_e) * 60.0, 0.03)
+	_start_fly(view_dist, body.display_pos)
 
 
 func _start_fly(view_dist: float, to_pos: Vector3) -> void:
@@ -305,6 +331,7 @@ static func _ease_in_out(t: float) -> float:
 
 
 func update_camera(dt: float) -> void:
+	_update_near()
 	var focus = _focus_pos()
 	if focus != null:
 		var tp: Vector3 = focus

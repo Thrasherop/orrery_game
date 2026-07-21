@@ -11,6 +11,9 @@ const TINTS := [
 	Vector3(1, 0.82, 0.64), Vector3(0.85, 0.9, 1),
 ]
 
+var _layers: Array = []   # { mat: ShaderMaterial, base: float } per point layer
+var _shrink := 1.0        # last applied follow_camera scale
+
 
 func _ready() -> void:
 	add_child(_star_points(7000, { size = 3.2, opacity = 0.95 }))
@@ -21,6 +24,22 @@ func _ready() -> void:
 
 func update_rotation(dt: float) -> void:
 	rotate_y(dt * 0.0022)
+
+
+## The real-scale view shrinks the camera's far plane during deep zooms (see
+## CameraRig._update_near) — far below the 2200–4000-unit star shell. Stars
+## are effectively at infinity, so shrinking the whole field around the CAMERA
+## is visually identical and keeps it inside the frustum: world = c(1-s) + s·orig.
+## The point shader sizes stars by 1/distance, so size_px scales by s too —
+## the on-screen result is pixel-identical to the unshrunk field.
+func follow_camera(cam_pos: Vector3, far: float) -> void:
+	var s := minf(far * 0.9 / 4000.0, 1.0)
+	scale = Vector3.ONE * s
+	position = cam_pos * (1.0 - s)
+	if absf(s - _shrink) > 0.001:
+		_shrink = s
+		for l in _layers:
+			l.mat.set_shader_parameter("size_px", l.base * s)
 
 
 func _star_points(count: int, opts: Dictionary) -> MeshInstance3D:
@@ -55,6 +74,7 @@ func _star_points(count: int, opts: Dictionary) -> MeshInstance3D:
 	mat.shader = STAR_SHADER
 	mat.set_shader_parameter("size_px", opts["size"])   # ["size"] — dot access hits Dictionary.size()
 	mat.set_shader_parameter("opacity", opts.opacity)
+	_layers.append({ mat = mat, base = opts["size"] })
 
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh

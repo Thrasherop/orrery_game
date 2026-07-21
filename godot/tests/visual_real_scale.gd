@@ -37,7 +37,33 @@ func _ready() -> void:
 	await get_tree().create_timer(3.0).timeout
 	await _shot("res://tests/realscale_4_physics.png")
 
+	# dive all the way into Earth: select, let the fly-to land, then drop the
+	# camera to ~3 true radii — the real disc should fill a good chunk of frame
+	sim.speed = 86400.0
+	for b in sim.planets:
+		if b.body_name == "Earth":
+			Events.select_requested.emit(b)
+	await get_tree().create_timer(1.6).timeout
+	var earth: SimBody = Events.selected
+	var er: float = BodyView.real_display_radius(earth.radius_km, earth.mass_e)
+	rig.apply_view(earth.display_pos, rig.yaw_goal, rig.pitch_goal, er * 3.0)
+	await get_tree().create_timer(1.0).timeout
+	await _shot("res://tests/realscale_6_earth_closeup.png")
+
+	# and a moon: Callisto's true disc is ~1e-4 display units across
+	for mb: SimBody in sim.moons:
+		if mb.body_name == "Callisto":
+			Events.select_requested.emit(mb)
+	await get_tree().create_timer(1.6).timeout
+	var cal: SimBody = Events.selected
+	var cr: float = BodyView.real_display_radius(cal.radius_km, cal.mass_e)
+	rig.apply_view(cal.display_pos, rig.yaw_goal, rig.pitch_goal, cr * 3.0)
+	await get_tree().create_timer(1.0).timeout
+	await _shot("res://tests/realscale_7_callisto_closeup.png")
+
 	# toggle back off: the familiar exaggerated orrery returns
+	Events.deselect_requested.emit()
+	rig.apply_view(Vector3.ZERO, rig.yaw_goal, rig.pitch_goal, 150.0)
 	Events.set_real_scale(false)
 	await get_tree().create_timer(1.5).timeout
 	await _shot("res://tests/realscale_5_back_off.png")
