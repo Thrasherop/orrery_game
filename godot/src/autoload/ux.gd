@@ -7,17 +7,32 @@ extends Node
 ## `set_simulated_handheld(true)` can be called from a test harness *before*
 ## the HUD is built to preview the phone experience on desktop.
 
+## UI icon glyphs (⚙ ✕ ⊕ ↺ ▾ ▸ ← ⋯, super/subscripts) — a DejaVu Sans subset.
+## Godot's built-in font lacks them and normally borrows them from OS system
+## fonts, which don't exist on web: without this fallback the icons render as
+## tofu boxes there.
+const SYMBOL_FONT: FontFile = preload("res://assets/fonts/ui_symbols.ttf")
+
 var handheld := false
 var scale := 1.0
 var scale_override := 0.0   # test harnesses: force a scale (>0) despite desktop DPI
 
 
 func _ready() -> void:
+	_install_symbol_fallback()
 	handheld = OS.has_feature("android") or OS.has_feature("ios") \
 		or OS.has_feature("web_android") or OS.has_feature("web_ios")
 	UITheme.touch = handheld
 	apply_scale()
 	get_window().size_changed.connect(apply_scale)
+
+
+## append the symbol font to the default theme font's fallback chain — every
+## Control resolves missing glyphs through it, on all platforms identically
+func _install_symbol_fallback() -> void:
+	var base := ThemeDB.fallback_font
+	if base != null and not base.fallbacks.has(SYMBOL_FONT):
+		base.fallbacks = base.fallbacks + [SYMBOL_FONT]
 
 
 func set_simulated_handheld(on: bool) -> void:
