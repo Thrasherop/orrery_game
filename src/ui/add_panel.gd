@@ -12,8 +12,11 @@ var sim: Simulation
 var host: SimBody = null   # null = sun-relative custom body
 
 ## set BEFORE setup(): the panel drops its own chrome (panel style, height-cap
-## scroll) because a MobileSheet hosts it and provides both
+## scroll) because a MobileSheet hosts it and provides both. The Cancel/Add
+## row is then not added to the form — it's exposed as `actions_row` for the
+## host to pin as an always-reachable sheet footer.
 var embedded := false
+var actions_row: HBoxContainer = null
 
 var title_label: Label
 var name_edit: LineEdit
@@ -136,7 +139,10 @@ func setup(sim_: Simulation) -> void:
 		sim.add_custom_body(read_inputs())
 		close_panel())
 	actions.add_child(add_btn)
-	box.add_child(actions)
+	if embedded:
+		actions_row = actions
+	else:
+		box.add_child(actions)
 
 	for e in [name_edit, mass_edit, speed_edit]:
 		e.text_changed.connect(func(_t: String) -> void: _on_input_changed())

@@ -51,6 +51,13 @@ func _ready() -> void:
 	# add-body sheet (the shared form, embedded)
 	hud.open_add(null)
 	await get_tree().create_timer(0.6).timeout
+	# Cancel/Add are pinned as the sheet footer: on screen without scrolling
+	var ar: Rect2 = hud.add_panel.actions_row.get_global_rect()
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var actions_reachable: bool = hud.add_panel.actions_row.is_visible_in_tree() \
+		and ar.position.y >= 0.0 and ar.end.y <= vp.y
+	print("[phone] add/cancel reachable without scrolling: ",
+		"ok" if actions_reachable else "FAIL", "  rect=", ar)
 	await _shot("res://tests/phone_4_add.png")
 
 	# tuck the in-progress form down to its peek: progress must survive (only
@@ -62,6 +69,8 @@ func _ready() -> void:
 	var add_kept: bool = hud.add_sheet.is_open() and hud.add_panel.visible \
 		and hud.add_panel.name_edit.text == "Draft body"
 	print("[phone] tucked add form keeps progress: ", "ok" if add_kept else "FAIL")
+	var footer_tucked: bool = not hud.add_panel.actions_row.is_visible_in_tree()
+	print("[phone] footer hidden at peek: ", "ok" if footer_tucked else "FAIL")
 	hud.add_sheet.expand()
 	await get_tree().create_timer(0.4).timeout
 	hud.add_panel.close_panel()
@@ -130,6 +139,7 @@ func _ready() -> void:
 	await get_tree().create_timer(1.2).timeout
 	await _shot("res://tests/phone_9_after_gestures.png")
 	var all_ok := ok_out and ok_in and picked == "Earth" and kept and peeked \
+		and actions_reachable and footer_tucked \
 		and add_kept and add_closed and body_restored and is_mobile
 	get_tree().quit(0 if all_ok else 1)
 

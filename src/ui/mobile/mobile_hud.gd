@@ -75,12 +75,13 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 	add_sheet = MobileSheet.new(false, ADD_PEEK_H)
 	add_sheet.dismissible = false
 	add_sheet.bottom_inset = BAR_H
-	add_sheet.max_ratio = 0.72
+	add_sheet.max_ratio = 0.82   # a form needs rows; the preview stays visible above
 	add_child(add_sheet)
 	add_panel = AddPanel.new()
 	add_panel.embedded = true
 	add_panel.setup(sim)
 	add_sheet.content.add_child(add_panel)
+	add_sheet.set_footer(add_panel.actions_row)   # Cancel/Add never scroll away
 	# the form's Cancel/Add call close_panel() (visible = false) — fold the
 	# sheet with it
 	add_panel.visibility_changed.connect(func() -> void:

@@ -31,8 +31,10 @@ var content: VBoxContainer
 
 var _scrim: ColorRect
 var _panel: PanelContainer
+var _col: VBoxContainer
 var _grabber: Control
 var _scroll: ScrollContainer
+var _footer: Control
 var _shown := 0.0          # currently revealed panel height (animated / dragged)
 var _tween: Tween
 var _dragging := false
@@ -63,23 +65,32 @@ func _init(modal_ := true, peek := 0.0) -> void:
 	_panel.clip_contents = true
 	add_child(_panel)
 
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 4)
-	_panel.add_child(col)
+	_col = VBoxContainer.new()
+	_col.add_theme_constant_override("separation", 4)
+	_panel.add_child(_col)
 
 	_grabber = Control.new()
 	_grabber.custom_minimum_size = Vector2(0, GRABBER_H)
 	_grabber.draw.connect(_draw_grabber)
 	_grabber.gui_input.connect(_on_grabber_input)
-	col.add_child(_grabber)
+	_col.add_child(_grabber)
 
 	_scroll = ScrollContainer.new()
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	# scrolling still works (touch pan / wheel) — the bar itself is just noise
-	# on a phone sheet
-	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	col.add_child(_scroll)
+	_col.add_child(_scroll)
+	# forms are dense with sliders/edits that swallow touch pans, so keep a
+	# visible, touch-sized scrollbar as the always-reliable scroll handle
+	var vsb := _scroll.get_v_scroll_bar()
+	vsb.custom_minimum_size.x = 14   # draggable with a fingertip
+	var track := StyleBoxEmpty.new()
+	vsb.add_theme_stylebox_override("scroll", track)
+	vsb.add_theme_stylebox_override("scroll_focus", track)
+	for st in [["grabber", 0.18], ["grabber_highlight", 0.3], ["grabber_pressed", 0.36]]:
+		var g := StyleBoxFlat.new()
+		g.bg_color = Color(1, 1, 1, st[1])
+		g.set_corner_radius_all(5)
+		vsb.add_theme_stylebox_override(st[0], g)
 
 	content = VBoxContainer.new()
 	content.add_theme_constant_override("separation", 8)
@@ -131,10 +142,30 @@ func add_title(text: String) -> Label:
 	return l
 
 
+## pins a control below the scroll area — critical actions (Add/Cancel) stay
+## reachable without scrolling the content. Hidden at peek, where only the
+## title strip shows.
+func set_footer(c: Control) -> void:
+	# hairline divider so pinned actions read as chrome, not as the next row
+	var rule := Panel.new()
+	rule.custom_minimum_size = Vector2(0, 1)
+	var rsb := StyleBoxFlat.new()
+	rsb.bg_color = Color(1, 1, 1, 0.08)
+	rule.add_theme_stylebox_override("panel", rsb)
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 8)
+	wrap.add_child(rule)
+	wrap.add_child(c)
+	_footer = wrap
+	_col.add_child(wrap)
+
+
 func _full_height() -> float:
 	var vp := get_viewport_rect().size
 	var sb := _panel.get_theme_stylebox("panel")
 	var chrome := GRABBER_H + 4.0 + sb.content_margin_top + sb.content_margin_bottom
+	if _footer != null:
+		chrome += _footer.get_combined_minimum_size().y + 4.0
 	var need := content.get_combined_minimum_size().y + chrome
 	var cap := vp.y * max_ratio - bottom_inset
 	return clampf(need, minf(peek_height, cap), cap)
@@ -156,6 +187,10 @@ func _layout() -> void:
 		_shown = _height_for(state)
 	var w := minf(vp.x, MAX_WIDTH)
 	_panel.visible = _shown > 0.5
+	# the pinned footer only appears once the sheet is meaningfully taller
+	# than its peek strip (at peek just the title shows)
+	if _footer != null:
+		_footer.visible = _shown > peek_height + 60.0
 	_panel.size = Vector2(w, maxf(_shown, _panel.get_combined_minimum_size().y))
 	_panel.position = Vector2((vp.x - w) * 0.5, vp.y - bottom_inset - _shown)
 
