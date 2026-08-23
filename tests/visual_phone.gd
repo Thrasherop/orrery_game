@@ -96,6 +96,19 @@ func _ready() -> void:
 	hud.settings_sheet.open()
 	await get_tree().create_timer(0.5).timeout
 	await _shot("res://tests/phone_7_settings.png")
+
+	# "Real scale" is reachable from Settings' display row, and the menu's
+	# quick row mirrors its state
+	var was_real: bool = Units.real_scale
+	hud.settings._real_btn.pressed.emit()
+	await get_tree().process_frame
+	var settings_real: bool = Units.real_scale != was_real
+	print("[phone] real scale toggles from Settings: ", "ok" if settings_real else "FAIL")
+	hud.menu_sheet._real_btn.pressed.emit()
+	await get_tree().process_frame
+	var menu_real: bool = Units.real_scale == was_real
+	print("[phone] real scale toggles from the menu: ", "ok" if menu_real else "FAIL")
+
 	hud.settings_sheet.close()
 	await get_tree().create_timer(0.3).timeout
 
@@ -140,6 +153,7 @@ func _ready() -> void:
 	await _shot("res://tests/phone_9_after_gestures.png")
 	var all_ok := ok_out and ok_in and picked == "Earth" and kept and peeked \
 		and actions_reachable and footer_tucked \
+		and settings_real and menu_real \
 		and add_kept and add_closed and body_restored and is_mobile
 	get_tree().quit(0 if all_ok else 1)
 

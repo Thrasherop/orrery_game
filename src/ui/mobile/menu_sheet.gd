@@ -13,6 +13,7 @@ var sim: Simulation
 var _orbits_btn: Button
 var _labels_btn: Button
 var _vectors_btn: Button
+var _real_btn: Button
 
 
 func _init() -> void:
@@ -43,6 +44,9 @@ func setup(sim_: Simulation) -> void:
 		Events.set_show_labels(not Events.show_labels))
 	_vectors_btn = _toggle_chip(toggles, "Vectors", func() -> void:
 		Events.set_show_vectors(not Events.show_vectors))
+	_real_btn = _toggle_chip(toggles, "Real scale", func() -> void:
+		Events.set_real_scale(not Units.real_scale))
+	_real_btn.tooltip_text = "Show true distances and sizes — planets shrink to dots and only the orbits remain visible"
 
 	# physics-load readout (refreshes itself via _process)
 	var perf := PerfPanel.new()
@@ -53,6 +57,7 @@ func setup(sim_: Simulation) -> void:
 	Events.orbits_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.labels_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.vectors_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
+	Events.real_scale_changed.connect(func(_on: bool) -> void: _refresh_toggles())
 	_refresh_toggles()
 
 
@@ -85,3 +90,4 @@ func _refresh_toggles() -> void:
 	UITheme.set_chip_active(_orbits_btn, Events.show_orbits)
 	UITheme.set_chip_active(_labels_btn, Events.show_labels)
 	UITheme.set_chip_active(_vectors_btn, Events.show_vectors)
+	UITheme.set_chip_active(_real_btn, Units.real_scale)

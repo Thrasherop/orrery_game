@@ -1,18 +1,16 @@
 class_name TimeSheet
 extends MobileSheet
-## Mobile time controls (the desktop dock's contents, minus play/pause which
-## lives in the action bar): speed presets, the log speed slider and the
-## "Real scale" view toggle.
+## Mobile time controls: speed presets and the log speed slider. Play/pause
+## lives in the action bar, and "Real scale" — a display setting, not a time
+## one — sits with the other display toggles in Settings and the menu.
 
 var sim: Simulation
 
 var preset_btns: Array = []      # [Button, speed]
 var speed_slider: HSlider
 var speed_label: Label
-var scale_check: CheckButton
 
 var _last_speed := -1.0
-var _last_real := false
 
 
 func _init() -> void:
@@ -55,18 +53,6 @@ func setup(sim_: Simulation) -> void:
 	speed_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_child(speed_label)
 
-	scale_check = CheckButton.new()
-	scale_check.text = "Real scale"
-	scale_check.tooltip_text = "Show true distances and sizes — planets shrink to dots and only the orbits remain visible"
-	scale_check.focus_mode = Control.FOCUS_NONE
-	scale_check.add_theme_font_size_override("font_size", UITheme.fs(12))
-	scale_check.add_theme_color_override("font_color", UITheme.TEXT)
-	scale_check.toggled.connect(func(on: bool) -> void:
-		Events.set_real_scale(on))
-	content.add_child(scale_check)
-
-	_last_real = Units.real_scale
-	scale_check.set_pressed_no_signal(_last_real)
 	_refresh_speed_ui()
 
 
@@ -85,6 +71,3 @@ func update_live() -> void:
 		return
 	if sim.speed != _last_speed:
 		_refresh_speed_ui()
-	if Units.real_scale != _last_real:
-		_last_real = Units.real_scale
-		scale_check.set_pressed_no_signal(_last_real)

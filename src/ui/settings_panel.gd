@@ -29,6 +29,7 @@ var _lock_note: Label
 var _orbits_btn: Button
 var _labels_btn: Button
 var _vectors_btn: Button
+var _real_btn: Button        # embedded (mobile) only — desktop's lives in the dock
 var _mode_btns := {}         # TrailFrames mode int -> Button (primary + advanced)
 var _adv_toggle: Button      # "Advanced" disclosure for the barycentric frames
 var _adv_row: HBoxContainer  # holds the advanced-frame chips (hidden by default)
@@ -129,6 +130,13 @@ func setup(sim_: Simulation, embed_box: Control = null) -> void:
 	_vectors_btn = _toggle_btn("Vectors", "Toggle velocity vectors (V)",
 		func() -> void: Events.set_show_vectors(not Events.show_vectors))
 	toggles.add_child(_vectors_btn)
+	# desktop keeps this in the time dock, which is always on screen there;
+	# mobile has no dock, so the view scale belongs with the display toggles
+	if _embedded:
+		_real_btn = _toggle_btn("Real scale",
+			"Show true distances and sizes — planets shrink to dots and only the orbits remain visible",
+			func() -> void: Events.set_real_scale(not Units.real_scale))
+		toggles.add_child(_real_btn)
 
 	# --- Path frame ---------------------------------------------------------
 	box.add_child(_spacer())
@@ -186,6 +194,7 @@ func setup(sim_: Simulation, embed_box: Control = null) -> void:
 	Events.orbits_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.labels_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.vectors_toggled.connect(func(_on: bool) -> void: _refresh_toggles())
+	Events.real_scale_changed.connect(func(_on: bool) -> void: _refresh_toggles())
 	Events.trail_mode_changed.connect(func(_m: int) -> void: _refresh_toggles())
 	Events.mode_changed.connect(_refresh)
 	_refresh()
@@ -277,6 +286,8 @@ func _refresh_toggles() -> void:
 	UITheme.set_chip_active(_orbits_btn, Events.show_orbits)
 	UITheme.set_chip_active(_labels_btn, Events.show_labels)
 	UITheme.set_chip_active(_vectors_btn, Events.show_vectors)
+	if _real_btn != null:
+		UITheme.set_chip_active(_real_btn, Units.real_scale)
 	for m in _mode_btns:
 		UITheme.set_chip_active(_mode_btns[m], TrailFrames.mode == m)
 	_moon_frame_check.set_pressed_no_signal(TrailFrames.moon_frame)
