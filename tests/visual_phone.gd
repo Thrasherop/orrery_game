@@ -1,8 +1,9 @@
 extends Node
 ## Visual verification harness for the handheld experience: resizes the window
 ## to a phone shape, forces touch UI + a ~420 dpi content scale, boots the real
-## main scene, exercises the touch gestures and captures screenshots.
-##   godot --path godot res://tests/visual_phone.tscn
+## main scene (which selects the MobileHud bottom-sheet paradigm), exercises
+## the sheets and touch gestures and captures screenshots.
+##   godot --path . res://tests/visual_phone.tscn
 
 
 func _ready() -> void:
@@ -16,48 +17,114 @@ func _ready() -> void:
 	var main: Node = load("res://main.tscn").instantiate()
 	add_child(main)
 	await get_tree().create_timer(3.0).timeout
+	var hud = main.hud
+	var is_mobile: bool = hud is MobileHud
+	print("[phone] mobile hud active: ", "ok" if is_mobile else "FAIL")
 	await _shot("res://tests/phone_1_overview.png")
 
-	# select Saturn → fly-to + info card
+	# select Saturn → fly-to + the body sheet peeks above the action bar
 	var sim: Simulation = main.sim
 	for b in sim.planets:
 		if b.body_name == "Saturn":
 			Events.select_requested.emit(b)
 	await get_tree().create_timer(1.5).timeout
-	await _shot("res://tests/phone_2_info.png")
+	var peeked: bool = hud.body_sheet.is_open() and hud.body_sheet.state == MobileSheet.State.PEEK
+	print("[phone] body sheet peeks on select: ", "ok" if peeked else "FAIL")
+	await _shot("res://tests/phone_2_body_peek.png")
 
-	# tuck the info card + rail into their edge drawers: only the tabs remain
-	# and the selection (camera follow) must survive
-	main.hud.info_drawer.set_open(false, false)
-	main.hud.rail_drawer.set_open(false, false)
-	await get_tree().create_timer(0.3).timeout
-	var kept: bool = Events.selected != null
-	print("[phone] minimized card keeps selection: ", "ok" if kept else "FAIL")
-	await _shot("res://tests/phone_2b_drawers_tucked.png")
-	main.hud.info_drawer.set_open(true, false)
-	main.hud.rail_drawer.set_open(true, false)
-
-	# add-body form
-	main.hud.add_panel.open_panel()
+	# expand → full stats; collapsing back to peek keeps selection + follow
+	hud.body_sheet.expand()
 	await get_tree().create_timer(0.5).timeout
-	await _shot("res://tests/phone_3_addpanel.png")
-	main.hud.add_panel.close_panel()
+	await _shot("res://tests/phone_2b_body_full.png")
+	hud.body_sheet.collapse()
+	await get_tree().create_timer(0.4).timeout
+	var kept: bool = Events.selected != null
+	print("[phone] collapsed sheet keeps selection: ", "ok" if kept else "FAIL")
+
+	# planets sheet
+	hud.planets_sheet.open_sheet()
+	await get_tree().create_timer(0.5).timeout
+	await _shot("res://tests/phone_3_planets.png")
+	hud.planets_sheet.close()
+	await get_tree().create_timer(0.4).timeout
+
+	# add-body sheet (the shared form, embedded)
+	hud.open_add(null)
+	await get_tree().create_timer(0.6).timeout
+	# Cancel/Add are pinned as the sheet footer: on screen without scrolling
+	var ar: Rect2 = hud.add_panel.actions_row.get_global_rect()
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var actions_reachable: bool = hud.add_panel.actions_row.is_visible_in_tree() \
+		and ar.position.y >= 0.0 and ar.end.y <= vp.y
+	print("[phone] add/cancel reachable without scrolling: ",
+		"ok" if actions_reachable else "FAIL", "  rect=", ar)
+	await _shot("res://tests/phone_4_add.png")
+
+	# tuck the in-progress form down to its peek: progress must survive (only
+	# Cancel/Add clear it) and the body card stays suppressed underneath
+	hud.add_panel.name_edit.text = "Draft body"
+	hud.add_sheet.collapse()
+	await get_tree().create_timer(0.5).timeout
+	await _shot("res://tests/phone_4b_add_peek.png")
+	var add_kept: bool = hud.add_sheet.is_open() and hud.add_panel.visible \
+		and hud.add_panel.name_edit.text == "Draft body"
+	print("[phone] tucked add form keeps progress: ", "ok" if add_kept else "FAIL")
+	var footer_tucked: bool = not hud.add_panel.actions_row.is_visible_in_tree()
+	print("[phone] footer hidden at peek: ", "ok" if footer_tucked else "FAIL")
+	hud.add_sheet.expand()
+	await get_tree().create_timer(0.4).timeout
+	hud.add_panel.close_panel()
+	await get_tree().create_timer(0.5).timeout
+	var add_closed: bool = not hud.add_sheet.is_open()
+	print("[phone] closing the form folds the sheet: ", "ok" if add_closed else "FAIL")
+	var body_restored: bool = hud.body_sheet.visible and Events.selected != null
+	print("[phone] body card restored after add: ", "ok" if body_restored else "FAIL")
 	Events.deselect_requested.emit()
 
+	# time, menu and settings sheets
+	hud.time_sheet.open()
+	await get_tree().create_timer(0.5).timeout
+	await _shot("res://tests/phone_5_time.png")
+	hud.time_sheet.close()
+	await get_tree().create_timer(0.3).timeout
+	hud.menu_sheet.open_sheet()
+	await get_tree().create_timer(0.5).timeout
+	await _shot("res://tests/phone_6_menu.png")
+	hud.menu_sheet.close()
+	await get_tree().create_timer(0.3).timeout
+	hud.settings.open_panel()
+	hud.settings_sheet.open()
+	await get_tree().create_timer(0.5).timeout
+	await _shot("res://tests/phone_7_settings.png")
+
+	# "Real scale" is reachable from Settings' display row, and the menu's
+	# quick row mirrors its state
+	var was_real: bool = Units.real_scale
+	hud.settings._real_btn.pressed.emit()
+	await get_tree().process_frame
+	var settings_real: bool = Units.real_scale != was_real
+	print("[phone] real scale toggles from Settings: ", "ok" if settings_real else "FAIL")
+	hud.menu_sheet._real_btn.pressed.emit()
+	await get_tree().process_frame
+	var menu_real: bool = Units.real_scale == was_real
+	print("[phone] real scale toggles from the menu: ", "ok" if menu_real else "FAIL")
+
+	hud.settings_sheet.close()
+	await get_tree().create_timer(0.3).timeout
+
 	# save browser overlay (demo content is removed again after the shot)
-	var browser: SaveBrowser = main.hud.save_browser
+	var browser: SaveBrowser = hud.save_browser
 	var demo: String = browser.store.create_save("", "Demo experiment", Snapshot.capture(sim, main.camera_rig))
 	var folder: String = browser.store.create_folder("", "Demos")
 	browser.open_browser()
 	await get_tree().create_timer(0.4).timeout
-	await _shot("res://tests/phone_5_saves.png")
+	await _shot("res://tests/phone_8_saves.png")
 	browser.close_browser()
 	browser.store.delete_save(demo)
 	browser.store.delete_folder(folder)
 
 	# --- gesture unit checks against the rig ------------------------------
-	# the add panel flew the camera to the proposed body's position — return
-	# to the boot overview so Earth is on screen for the tap check below
+	# return to the boot overview so Earth is on screen for the tap check
 	var rig: CameraRig = main.camera_rig
 	rig.apply_view(Vector3.ZERO, 0.313, 0.379, 167.5)
 	await get_tree().process_frame
@@ -83,8 +150,12 @@ func _ready() -> void:
 	print("[phone] tap near Earth selected: ", picked, "  ", "ok" if picked == "Earth" else "FAIL")
 
 	await get_tree().create_timer(1.2).timeout
-	await _shot("res://tests/phone_4_after_gestures.png")
-	get_tree().quit(0 if ok_out and ok_in and picked == "Earth" and kept else 1)
+	await _shot("res://tests/phone_9_after_gestures.png")
+	var all_ok := ok_out and ok_in and picked == "Earth" and kept and peeked \
+		and actions_reachable and footer_tucked \
+		and settings_real and menu_real \
+		and add_kept and add_closed and body_restored and is_mobile
+	get_tree().quit(0 if all_ok else 1)
 
 
 func _pinch(rig: CameraRig, a0: Vector2, b0: Vector2, a1: Vector2, b1: Vector2) -> void:

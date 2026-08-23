@@ -55,3 +55,22 @@ src/
 The simulation layer is renderer-agnostic: `core/nbody.gd` integrates in
 double precision (PackedFloat64Array), and views only read per-frame
 `SimBody` state (display positions, trails, stats).
+
+## Icons
+
+`icon.svg` is the master app icon (also the project icon, used for the web
+favicon/apple-touch icon at export time). `assets/icons/` holds the split
+layers Android's adaptive icon wants — `icon_foreground.svg` (the orrery on
+transparency), `icon_background.svg` (sky + stars) and `icon_monochrome.svg`
+(flat silhouette for themed icons) — plus the rasterised PNGs the export
+presets point at. All the art sits inside the central 66% of the canvas so no
+launcher mask clips it.
+
+After editing any of the SVGs, regenerate the PNGs:
+
+```
+scripts/generate-icons.ps1        # godot --headless -s scripts/generate_icons.gd
+```
+
+The PNGs are excluded from the exported pack (the exporter reads them from
+disk), so they cost nothing at runtime.
