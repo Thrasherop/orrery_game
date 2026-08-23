@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-label="A sun ringed by tilted planetary orbits, silhouette">
+  <title>Orrery icon — adaptive monochrome layer</title>
+  <!-- Themed-icon layer: Android keeps only the alpha and tints it, so this is
+       a flat silhouette of icon.svg. Two simplifications the flat version needs:
+       the innermost orbit is dropped and the sun grows to fill its place (with
+       no corona to carry it, a 30 px disc reads as just another planet), and
+       gaps are punched where a body or the sun crosses an orbit, which colour
+       and depth ordering handle in the full icon. -->
+  <defs>
+    <mask id="gaps" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <g transform="rotate(-20 256 256)" fill="#000">
+        <circle cx="256"   cy="256"   r="44"/>
+        <circle cx="98.1"  cy="277.5" r="24"/>
+        <circle cx="346.5" cy="289.9" r="28"/>
+      </g>
+    </mask>
+  </defs>
+
+  <g transform="rotate(-20 256 256)" fill="#ffffff">
+    <g mask="url(#gaps)" fill="none" stroke="#ffffff" stroke-width="11">
+      <ellipse cx="256" cy="256" rx="168" ry="63"/>
+      <ellipse cx="256" cy="256" rx="128" ry="48"/>
+    </g>
+
+    <circle cx="256"   cy="256"   r="36"/>
+    <circle cx="98.1"  cy="277.5" r="15"/>
+    <circle cx="346.5" cy="289.9" r="19"/>
+  </g>
+</svg>

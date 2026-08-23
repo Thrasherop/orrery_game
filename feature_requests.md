@@ -5,8 +5,9 @@ multiple tabs
 
 
 edit properties of existing objects
-
-
+        - speed
+        - mass
+        - vector direction
 
 alert history
 

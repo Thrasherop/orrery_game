@@ -113,6 +113,51 @@ static func style_ghost(btn: Button) -> void:
 	btn.add_theme_color_override("font_hover_color", TEXT)
 
 
+## bottom-sheet surface (mobile): rounded top corners only, a bit more opaque
+## than floating panels so 3D content doesn't ghost through the text
+static func sheet_style() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, 0.94)
+	sb.border_color = PANEL_BORDER
+	sb.border_width_top = 1
+	sb.corner_radius_top_left = 20
+	sb.corner_radius_top_right = 20
+	sb.content_margin_left = 18
+	sb.content_margin_right = 18
+	sb.content_margin_top = 2
+	sb.content_margin_bottom = 12
+	sb.shadow_color = Color(0, 0, 0, 0.5)
+	sb.shadow_size = 16
+	return sb
+
+
+## full-width mobile action bar along the bottom edge
+static func bar_style() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, 0.92)
+	sb.border_color = PANEL_BORDER
+	sb.border_width_top = 1
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	return sb
+
+
+## full-width tappable list row (mobile sheet menus and body lists)
+static func style_row(btn: Button, font_size := 13) -> void:
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.custom_minimum_size = Vector2(0, 52)
+	btn.add_theme_font_size_override("font_size", fs(font_size))
+	btn.add_theme_stylebox_override("normal", flat_style(Color(1, 1, 1, 0.03), 12))
+	btn.add_theme_stylebox_override("hover", flat_style(Color(1, 1, 1, 0.07), 12))
+	btn.add_theme_stylebox_override("pressed", flat_style(Color(1, 1, 1, 0.1), 12))
+	btn.add_theme_color_override("font_color", TEXT)
+	btn.add_theme_color_override("font_hover_color", TEXT)
+	btn.add_theme_color_override("font_pressed_color", TEXT)
+
+
 ## slim edge-drawer tab (chevron is drawn by EdgeDrawer itself)
 static func style_drawer_handle(btn: Button) -> void:
 	btn.focus_mode = Control.FOCUS_NONE

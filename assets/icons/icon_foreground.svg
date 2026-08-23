@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-label="A sun ringed by tilted planetary orbits">
+  <title>Orrery icon — adaptive foreground layer</title>
+  <!-- Foreground half of the Android adaptive icon: the orrery on transparency,
+       sized so it stays inside the 66% safe circle under any launcher mask.
+       Keep in sync with ../../icon.svg. -->
+  <defs>
+    <radialGradient id="corona" cx="50%" cy="50%" r="50%">
+      <stop offset="0"    stop-color="#ffc46b" stop-opacity="0.55"/>
+      <stop offset="0.32" stop-color="#ffb454" stop-opacity="0.26"/>
+      <stop offset="0.68" stop-color="#ff9d3c" stop-opacity="0.08"/>
+      <stop offset="1"    stop-color="#ff9d3c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sun" cx="42%" cy="38%" r="72%">
+      <stop offset="0"    stop-color="#fff6de"/>
+      <stop offset="0.42" stop-color="#ffcd7a"/>
+      <stop offset="1"    stop-color="#ff9a35"/>
+    </radialGradient>
+    <radialGradient id="pEarth" cx="34%" cy="30%" r="82%">
+      <stop offset="0"    stop-color="#9fd0f5"/>
+      <stop offset="0.55" stop-color="#6fa8dc"/>
+      <stop offset="1"    stop-color="#2f5b8c"/>
+    </radialGradient>
+    <radialGradient id="pWarm" cx="34%" cy="30%" r="82%">
+      <stop offset="0"    stop-color="#f4e3bd"/>
+      <stop offset="0.55" stop-color="#e3cfa3"/>
+      <stop offset="1"    stop-color="#8f7748"/>
+    </radialGradient>
+    <radialGradient id="pRock" cx="34%" cy="30%" r="82%">
+      <stop offset="0"    stop-color="#d3c4ad"/>
+      <stop offset="0.55" stop-color="#b9a389"/>
+      <stop offset="1"    stop-color="#6b5c48"/>
+    </radialGradient>
+  </defs>
+
+  <g transform="rotate(-20 256 256)">
+    <g fill="none" stroke="#6cc4ff" stroke-linecap="butt">
+      <ellipse cx="256" cy="256" rx="168" ry="63" stroke-width="9" opacity="0.22"/>
+      <ellipse cx="256" cy="256" rx="128" ry="48" stroke-width="9" opacity="0.24"/>
+      <ellipse cx="256" cy="256" rx="88"  ry="34" stroke-width="8" opacity="0.26"/>
+      <path d="M 88,256  A 168,63 0 0 1 424,256" stroke-width="9" opacity="0.72"/>
+      <path d="M 128,256 A 128,48 0 0 1 384,256" stroke-width="9" opacity="0.78"/>
+      <path d="M 168,256 A 88,34  0 0 1 344,256" stroke-width="8" opacity="0.85"/>
+    </g>
+
+    <circle cx="318.2" cy="231.9" r="9" fill="url(#pRock)" opacity="0.85"/>
+
+    <circle cx="256" cy="256" r="108" fill="url(#corona)"/>
+    <circle cx="256" cy="256" r="30"  fill="url(#sun)"/>
+
+    <circle cx="98.1"  cy="277.5" r="14" fill="url(#pWarm)"/>
+    <circle cx="346.5" cy="289.9" r="18" fill="url(#pEarth)"/>
+  </g>
+</svg>

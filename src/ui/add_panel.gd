@@ -11,6 +11,13 @@ extends PanelContainer
 var sim: Simulation
 var host: SimBody = null   # null = sun-relative custom body
 
+## set BEFORE setup(): the panel drops its own chrome (panel style, height-cap
+## scroll) because a MobileSheet hosts it and provides both. The Cancel/Add
+## row is then not added to the form — it's exposed as `actions_row` for the
+## host to pin as an always-reachable sheet footer.
+var embedded := false
+var actions_row: HBoxContainer = null
+
 var title_label: Label
 var name_edit: LineEdit
 var mass_edit: LineEdit
@@ -34,13 +41,17 @@ var _scroll: ScrollContainer
 
 func setup(sim_: Simulation) -> void:
 	sim = sim_
-	add_theme_stylebox_override("panel", UITheme.panel_style())
-	custom_minimum_size = Vector2(288, 0)
+	if embedded:
+		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	else:
+		add_theme_stylebox_override("panel", UITheme.panel_style())
+		custom_minimum_size = Vector2(288, 0)
 	visible = false
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 7)
-	if UITheme.touch:
+	if UITheme.touch and not embedded:
 		# touch: the form scrolls inside a height cap so it never slides
 		# under the dock (see _update_size_cap); desktop fits as-is
 		_scroll = ScrollContainer.new()
@@ -128,7 +139,10 @@ func setup(sim_: Simulation) -> void:
 		sim.add_custom_body(read_inputs())
 		close_panel())
 	actions.add_child(add_btn)
-	box.add_child(actions)
+	if embedded:
+		actions_row = actions
+	else:
+		box.add_child(actions)
 
 	for e in [name_edit, mass_edit, speed_edit]:
 		e.text_changed.connect(func(_t: String) -> void: _on_input_changed())
