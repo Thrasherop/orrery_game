@@ -52,10 +52,24 @@ func _ready() -> void:
 	hud.open_add(null)
 	await get_tree().create_timer(0.6).timeout
 	await _shot("res://tests/phone_4_add.png")
+
+	# tuck the in-progress form down to its peek: progress must survive (only
+	# Cancel/Add clear it) and the body card stays suppressed underneath
+	hud.add_panel.name_edit.text = "Draft body"
+	hud.add_sheet.collapse()
+	await get_tree().create_timer(0.5).timeout
+	await _shot("res://tests/phone_4b_add_peek.png")
+	var add_kept: bool = hud.add_sheet.is_open() and hud.add_panel.visible \
+		and hud.add_panel.name_edit.text == "Draft body"
+	print("[phone] tucked add form keeps progress: ", "ok" if add_kept else "FAIL")
+	hud.add_sheet.expand()
+	await get_tree().create_timer(0.4).timeout
 	hud.add_panel.close_panel()
 	await get_tree().create_timer(0.5).timeout
 	var add_closed: bool = not hud.add_sheet.is_open()
 	print("[phone] closing the form folds the sheet: ", "ok" if add_closed else "FAIL")
+	var body_restored: bool = hud.body_sheet.visible and Events.selected != null
+	print("[phone] body card restored after add: ", "ok" if body_restored else "FAIL")
 	Events.deselect_requested.emit()
 
 	# time, menu and settings sheets
@@ -115,7 +129,8 @@ func _ready() -> void:
 
 	await get_tree().create_timer(1.2).timeout
 	await _shot("res://tests/phone_9_after_gestures.png")
-	var all_ok := ok_out and ok_in and picked == "Earth" and kept and peeked and add_closed and is_mobile
+	var all_ok := ok_out and ok_in and picked == "Earth" and kept and peeked \
+		and add_kept and add_closed and body_restored and is_mobile
 	get_tree().quit(0 if all_ok else 1)
 
 

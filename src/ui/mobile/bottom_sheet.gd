@@ -23,6 +23,8 @@ var modal := true
 var peek_height := 0.0     # > 0 enables the collapsed snap state
 var max_ratio := 0.62      # FULL height cap as a fraction of the viewport
 var bottom_inset := 0.0    # keeps the sheet above the action bar (non-modal sheets)
+var dismissible := true    # false: swiping down stops at peek — only code close()s
+var suppressed := false    # temporarily invisible without losing its snap state
 
 var state: int = State.HIDDEN
 var content: VBoxContainer
@@ -110,7 +112,16 @@ func collapse() -> void:
 
 
 func is_open() -> bool:
-	return visible and state != State.HIDDEN
+	return state != State.HIDDEN
+
+
+## hide/show without touching the snap state or emitting `closed` — used when
+## another sheet takes the bottom edge (e.g. the add form over the body card)
+func set_suppressed(on: bool) -> void:
+	if suppressed == on:
+		return
+	suppressed = on
+	visible = not on and state != State.HIDDEN
 
 
 ## convenience: a standard sheet title at the top of `content`
@@ -157,13 +168,13 @@ func _snap_to(st: int) -> void:
 		_tween.kill()
 	if not is_inside_tree():
 		_shown = goal
-		visible = st != State.HIDDEN
+		visible = st != State.HIDDEN and not suppressed
 		if _scrim != null:
-			_scrim.modulate.a = 1.0 if visible else 0.0
+			_scrim.modulate.a = 1.0 if st != State.HIDDEN else 0.0
 		if st == State.HIDDEN and was != State.HIDDEN:
 			closed.emit()
 		return
-	visible = true
+	visible = not suppressed
 	if _scrim != null:
 		_scrim.mouse_filter = Control.MOUSE_FILTER_STOP if st != State.HIDDEN \
 			else Control.MOUSE_FILTER_IGNORE
@@ -224,6 +235,9 @@ func _end_drag(release_y: float) -> void:
 			target = State.PEEK
 		if absf(_shown - full) < best:
 			target = State.FULL
+	# a non-dismissible sheet (in-progress form) tucks to peek, never away
+	if target == State.HIDDEN and not dismissible:
+		target = State.PEEK if peek_height > 0.0 else State.FULL
 	_snap_to(target)
 
 

@@ -14,6 +14,7 @@ extends CanvasLayer
 ## gesture closes sheets / deselects before it exits the app.
 
 const BAR_H := 66.0
+const ADD_PEEK_H := 68.0   # grabber + form title strip
 
 var sim: Simulation
 var rig: CameraRig
@@ -68,7 +69,12 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 	menu_sheet.setup(sim)
 	add_child(menu_sheet)
 
-	add_sheet = MobileSheet.new(true)
+	# the add form is non-modal like the body card: it tucks down to a peek
+	# (title strip above the bar) so you can look around mid-edit without
+	# losing progress — only its Cancel/Add buttons actually clear it
+	add_sheet = MobileSheet.new(false, ADD_PEEK_H)
+	add_sheet.dismissible = false
+	add_sheet.bottom_inset = BAR_H
 	add_sheet.max_ratio = 0.72
 	add_child(add_sheet)
 	add_panel = AddPanel.new()
@@ -76,13 +82,14 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 	add_panel.setup(sim)
 	add_sheet.content.add_child(add_panel)
 	# the form's Cancel/Add call close_panel() (visible = false) — fold the
-	# sheet with it; swiping the sheet away closes the form the same way
+	# sheet with it
 	add_panel.visibility_changed.connect(func() -> void:
 		if not add_panel.visible and add_sheet.is_open():
 			add_sheet.close())
 	add_sheet.closed.connect(func() -> void:
 		if add_panel.visible:
-			add_panel.close_panel())
+			add_panel.close_panel()
+		body_sheet.set_suppressed(false))
 
 	settings_sheet = MobileSheet.new(true)
 	settings_sheet.max_ratio = 0.78
@@ -101,8 +108,12 @@ func setup(sim_: Simulation, rig_: CameraRig = null) -> void:
 	bar.planets_pressed.connect(func() -> void: _open_modal(planets_sheet, planets_sheet.open_sheet))
 	bar.speed_pressed.connect(func() -> void: _open_modal(time_sheet, time_sheet.open))
 	# ⊕ mirrors the desktop rail: builds around the current selection
-	# (sun/none → a free sun-orbiting body, anything else → a moon of it)
+	# (sun/none → a free sun-orbiting body, anything else → a moon of it);
+	# with an add already in progress it re-expands that instead of resetting
 	bar.add_pressed.connect(func() -> void:
+		if add_sheet.is_open():
+			add_sheet.expand()
+			return
 		var sel = Events.selected
 		open_add(null if sel == null or sel.is_sun else sel))
 
@@ -166,18 +177,21 @@ func _build_status_pill() -> void:
 	add_child(pill)
 
 
-## opens one modal sheet, closing any other (only one at a time)
+## opens one modal sheet, closing any other (only one at a time); an
+## in-progress add form only tucks down to its peek — progress must survive
 func _open_modal(sheet: MobileSheet, opener: Callable) -> void:
-	for s in [planets_sheet, time_sheet, menu_sheet, add_sheet, settings_sheet]:
+	for s in [planets_sheet, time_sheet, menu_sheet, settings_sheet]:
 		if s != sheet and s.is_open():
-			if s == add_sheet and add_panel.visible:
-				add_panel.close_panel()
-			else:
-				s.close()
+			s.close()
+	if sheet != add_sheet and add_sheet.is_open() and add_sheet.state == MobileSheet.State.FULL:
+		add_sheet.collapse()
 	opener.call()
 
 
+## starts a fresh add (resets the form) — the ⊕ button routes here only when
+## no add is in progress
 func open_add(host) -> void:
+	body_sheet.set_suppressed(true)   # the form takes the bottom edge
 	add_panel.open_panel(host)
 	_open_modal(add_sheet, func() -> void: add_sheet.open(true))
 
@@ -222,7 +236,11 @@ func _notification(what: int) -> void:
 	if save_browser.is_open():
 		save_browser.close_browser()
 	elif add_sheet.is_open():
-		add_panel.close_panel()
+		# first back tucks the form down; a second back cancels it
+		if add_sheet.state == MobileSheet.State.FULL:
+			add_sheet.collapse()
+		else:
+			add_panel.close_panel()
 	elif settings_sheet.is_open():
 		settings_sheet.close()
 	elif planets_sheet.is_open():
