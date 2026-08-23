@@ -8,6 +8,7 @@ config_version=5
 
 config/name="Orrery — Solar System Simulation"
 run/main_scene="res://main.tscn"
+config/icon="res://icon.svg"
 config/features=PackedStringArray("4.4", "Forward Plus")
 
 [autoload]
