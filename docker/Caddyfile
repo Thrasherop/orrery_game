@@ -1,0 +1,54 @@
+# Caddy config for the exported Godot web build (see ../Dockerfile, stage 3).
+#
+# Plain HTTP on :80 by design. Putting a hostname here instead would make Caddy
+# fetch a Let's Encrypt certificate automatically, but that only works if this
+# container owns ports 80/443 on a public IP. Behind an existing reverse proxy
+# — which is the usual case on a shared Ubuntu box — that would fight with the
+# front door. Terminate TLS out there and forward plain HTTP to this container.
+:80 {
+	# Where the files live in the image (Dockerfile: COPY --from=export ... /srv)
+	root * /srv
+
+	# Serve the .br / .gz files the build stage produced, chosen by the
+	# client's Accept-Encoding header. `br` is listed first because it wins on
+	# size — that ~44 MB index.wasm ships as roughly 9 MB. If a client accepts
+	# neither, Caddy falls back to the uncompressed original automatically.
+	file_server {
+		precompressed br gzip
+	}
+
+	# Compress on the fly anything the build stage did NOT pre-compress (a
+	# stray file type, a future addition). Caddy skips responses that already
+	# carry a Content-Encoding, so this never double-compresses the files above.
+	encode zstd gzip
+
+	# Caching, and why it is deliberately conservative:
+	#
+	# Godot's output filenames are fixed — every deploy ships a new index.wasm
+	# at the SAME path. There is no content hash in the name, so the usual
+	# "cache forever, bust via filename" trick would pin visitors to a stale
+	# build until they hard-refreshed.
+	#
+	# `no-cache` does not mean "don't cache". It means "cache it, but check
+	# with me before reusing it". Caddy attaches an ETag, so a repeat visitor
+	# sends one small conditional request, gets a 304 Not Modified, and reuses
+	# the ~9 MB it already has. Correct across deploys, and still fast.
+	header Cache-Control "no-cache"
+
+	# No COOP/COEP headers here on purpose. Those are required for Godot web
+	# exports built with thread support, which need SharedArrayBuffer and
+	# therefore cross-origin isolation. This project exports with
+	# `variant/thread_support=false` (see export_presets.cfg) and runs its
+	# physics kernel as a standalone WASM module via JavaScriptBridge, so it
+	# needs none of that. If you ever flip thread support on, this is the file
+	# that has to grow a Cross-Origin-Opener-Policy: same-origin and a
+	# Cross-Origin-Embedder-Policy: require-corp header, or the game will fail
+	# to boot.
+
+	# A cheap endpoint for uptime checks and container healthchecks.
+	respond /healthz "ok" 200
+
+	# Access logs to stdout, which is where Docker expects them:
+	# `docker logs <container>` and any log driver will pick them up.
+	log
+}

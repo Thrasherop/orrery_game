@@ -1,0 +1,39 @@
+# Files listed here are never sent to the Docker daemon, so `COPY . .` skips
+# them. This matters for speed (the build context is uploaded on every build)
+# and for correctness (stale local artifacts must not leak into the image).
+#
+# Careful: this applies to every COPY from the build context, including
+# `COPY docker/Caddyfile` in the final stage — so do not exclude docker/.
+
+# Version control
+.git
+.gitignore
+
+# Godot's local import cache. Must NOT be copied: the image runs a clean
+# `godot --headless --import`, and a half-populated cache from a different
+# machine/version is exactly how you get a build that silently ships no assets.
+.godot/
+
+# Previous local export output (~50 MB) — the image rebuilds this from source.
+build/
+
+# Native build artifacts. The web image compiles its own WASM kernel in stage 1
+# from native/src, and needs none of the desktop/Android toolchain output.
+native/godot-cpp/
+native/build-*/
+native/bin/
+native/web-wasm/
+native/src/*.o
+native/*.log
+
+# Desktop/Android GDExtension binaries. bin/orrery_native.gdextension itself is
+# intentionally NOT excluded: the build script moves it aside during the export,
+# and keeping it here means the image build exercises the same code path a clean
+# git clone does.
+bin/*.dll
+bin/*.dll.a
+bin/*.so
+bin/*.wasm
+
+# Editor/agent scratch
+.claude/
